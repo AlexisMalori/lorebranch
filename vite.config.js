@@ -10,5 +10,5 @@ export default defineConfig({
       },
     }),
   ],
-  base: "/lorebranch/",
+  base: "https://alexismalori.github.io/lorebranch/",
 })
