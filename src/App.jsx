@@ -256,11 +256,6 @@ export default function App(){
   const updateNodes=(id,patch)=>{
     setWorkspaces(prev=>{
       const updated={...prev,[id]:{...prev[id],nodes:patch}};
-      if(prev[id]?.settings?.autosave){
-        const w=updated[id];
-        const payload={...buildExport(w.nodes,new Set(Object.keys(w.nodes)),w.title),workspace:true};
-        setTimeout(()=>downloadJSON(payload,(w.title||"ws").toLowerCase().replace(/\s+/g,"-").replace(/[^a-z0-9-]/g,"")+".dtree.json"),0);
-      }
       return updated;
     });
   };
