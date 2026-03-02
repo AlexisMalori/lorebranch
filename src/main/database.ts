@@ -8,7 +8,7 @@ let db: Database.Database | null = null
 export function initDatabase() {
   const dbPath = path.join(app.getPath('userData'), 'app.db')
   db = new Database(dbPath)
-  db.exec('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)')
+  db.exec('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, content TEXT)')
   db.pragma('journal_mode = WAL') // Enable Write-Ahead Logging for better concurrency
 
   console.log("Database initialized at", dbPath)
@@ -23,8 +23,8 @@ export function getAllItems() {
 // Setter
 export function addItem(name: string, content: any) {
     if (!db) throw new Error('Database not initialized')
-    const stmt = db.prepare('INSERT INTO items (name, content) VALUES (?, ?)')
-    const info = stmt.run(name, content)
+    const stmt = db.prepare('INSERT OR REPLACE INTO items (name, content) VALUES (?, ?)')
+    const info = stmt.run(name, typeof content === 'string' ? content : JSON.stringify(content))
     return { id: info.lastInsertRowid, name, content }
 }
 
@@ -37,6 +37,13 @@ export function addManyItems(items: {name: string, content: any}[]) {
             insert.run(item.name, item.content)
         }
     })()
+}
+
+export function deleteItem(name: string) {
+    if (!db) throw new Error('Database not initialized')
+    const stmt = db.prepare('DELETE FROM items WHERE name = ?')
+    const info = stmt.run(name)
+    return { deleted: info.changes > 0, name }
 }
 
 // Close function for when the app is quitting to safely deload data.

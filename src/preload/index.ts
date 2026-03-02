@@ -4,7 +4,9 @@ import { electronAPI } from '@electron-toolkit/preload'
 // Custom APIs for renderer to securely access main process features.
 const api = {
   addItem: (note: {name:string; content:any}) => ipcRenderer.invoke('db:add-item', note),
-  getItems: () => ipcRenderer.invoke('db:get-items')
+  getItems: () => ipcRenderer.invoke('db:get-items'),
+  addManyItems: (items: {name:string; content:any}[]) => ipcRenderer.invoke('db:add-many-items', items),
+  deleteItem: (name: string) => ipcRenderer.invoke('db:delete-item', name),
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

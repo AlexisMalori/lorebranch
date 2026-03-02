@@ -3,7 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
-import { initDatabase, getAllItems, addItem, closeDatabase, addManyItems } from './database'
+import { initDatabase, getAllItems, addItem, closeDatabase, addManyItems, deleteItem } from './database'
 
 function createWindow(): void {
 
@@ -65,13 +65,17 @@ app.whenReady().then(() => {
   // Secure IPC handlers
 
   ipcMain.handle('db:add-item', (_, note: {name: string, content: any}) => {
-    if (typeof note !== 'object' || typeof note.name !== 'string' || typeof note.content !== 'string')
+    if (typeof note !== 'object' || typeof note.name !== 'string')
       throw new Error('Invalid database content')
-
     if (note.name.length > 200)
       throw new Error('Invalid database content')
-
     return addItem(note.name, note.content)
+  })
+
+  ipcMain.handle('db:delete-item', (_, name: string) => {
+    if (typeof name !== 'string')
+      throw new Error('Invalid name')
+    return deleteItem(name)
   })
 
   ipcMain.handle('db:get-items', () => {

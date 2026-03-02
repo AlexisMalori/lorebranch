@@ -8,6 +8,7 @@ import {
   workspacesActions, uiActions,
   selectAllWorkspaces, selectUi, selectActiveWsId, selectActiveWorkspace,
   selectNodes, selectCharacters, selectStories, selectRelationships, selectSettings,
+  selectDbReady
 } from "./store";
 
 // -- Database getter and setter.
@@ -30,9 +31,14 @@ const addItem = async (name, content) => {
   }
 };
 
-await window.api.getItems().then(
-  items => { console.log("Loaded items:", items); }).catch(error => { console.error("Error loading items:", error); }
-);
+const addItems = async (items) => {
+  try {
+    const result = await window.api.addManyItems(items);
+    console.log("Added items:", result);
+  } catch (error) {
+    console.error("Error adding items:", error);
+  }
+};
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const T = {
@@ -168,6 +174,14 @@ export default function App() {
   const stories     = useSelector(selectStories);
   const relationships = useSelector(selectRelationships);
   const settings    = useSelector(selectSettings);
+  const dbReady = useSelector(selectDbReady);
+  if (!dbReady) return (
+    <div style={{ width: "100%", height: "100vh", background: "#1a1814",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5a5448" }}>
+      loading…
+    </div>
+  );
 
   const { view, selectedNodeId, editingNodeId, activeCharId, sidebarOpen, modal,
           toast, storyModal, deleteStoryModal,
@@ -1015,7 +1029,7 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
           </div>
         </div>
       )}
-      
+
       {hoveredEdge && <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", fontFamily: T.fontMono, fontSize: 10, color: T.red, background: T.bgApp, border: "1px solid #6a3030", padding: "4px 14px", borderRadius: 3, pointerEvents: "none" }}>click edge to disconnect</div>}
       {connecting && connectHoverTarget && (
         <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", fontFamily: T.fontMono, fontSize: 10, background: T.bgApp, border: `1px solid ${nodes[connecting.fromId]?.children.includes(connectHoverTarget) ? T.redBorder : "#4a6030"}`, color: nodes[connecting.fromId]?.children.includes(connectHoverTarget) ? T.red : "#90c060", padding: "4px 14px", borderRadius: 3, pointerEvents: "none" }}>
