@@ -11,35 +11,6 @@ import {
   selectDbReady
 } from "./store";
 
-// -- Database getter and setter.
-const loadItems = async () => {
-  try {
-    const notes = await window.api.getItems();
-    console.log("Loaded notes:", notes);
-  } catch (error) {
-    console.error("Error loading notes:", error);
-  }
-};
-
-const addItem = async (name, content) => {
-  try {
-    const note = { name, content };
-    const result = await window.api.addItem(note);
-    console.log("Added note:", result);
-  } catch (error) {
-    console.error("Error adding note:", error);
-  }
-};
-
-const addItems = async (items) => {
-  try {
-    const result = await window.api.addManyItems(items);
-    console.log("Added items:", result);
-  } catch (error) {
-    console.error("Error adding items:", error);
-  }
-};
-
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const T = {
   fontSerif:   "'Crimson Pro', serif",
@@ -394,7 +365,9 @@ export default function App() {
             <OverviewCanvas nodes={nodes} setNodes={setNodes}
               onOpenBubble={openBubble} onToggleConnect={toggleConnect}
               onDisconnect={disconnectNodes} onDeleteNodes={deleteNodes}
-              onUpdateNode={updateNode} showToast={showToast} />
+              onUpdateNode={updateNode} showToast={showToast}
+              onCommitNodePositions={(positions) => dispatch(workspacesActions.commitNodePositions({ wsId: activeWsId, positions }))}
+            />
           )}
           {view === "bubble" && selectedNodeId && nodes[selectedNodeId] && (
             <BubbleView
@@ -799,7 +772,7 @@ function StoryCard({ story, characters, nodes, onEdit, onDelete, onOpenChar, onO
 // ═══════════════════════════════════════════════════════════════════════════════
 const NODE_W = 230, NODE_H = 90;
 
-function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, showToast }) {
+function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, onCommitNodePositions, showToast }) {
   const canvasRef = useRef(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -844,7 +817,18 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
 
   const onMouseUp = useCallback((e) => {
     if (panning) { setPanning(null); return; }
-    if (dragging) { setDragging(null); return; }
+    if (dragging) {
+      const positions = dragging.ids
+        .filter(id => nodes[id])
+        .map(id => ({
+            id,
+            x: dragging.startPositions[id].x + (e.clientX - dragging.startX) / zoom,
+            y: dragging.startPositions[id].y + (e.clientY - dragging.startY) / zoom,
+        }));
+      onCommitNodePositions(positions);
+      setDragging(null);
+      return;
+    }
     if (connecting) {
       const { x, y } = toCanvas(e.clientX, e.clientY);
       const target = Object.values(nodes).find(n => x >= n.x && x <= n.x + NODE_W && y >= n.y && y <= n.y + NODE_H && n.id !== connecting.fromId);

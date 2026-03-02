@@ -77,6 +77,17 @@ const workspacesSlice = createSlice({
       delete state[id];
     },
 
+    commitNodePositions(state, { payload: { wsId, positions } }) {
+    // positions = [{ id, x, y }, ...]
+    if (!state[wsId]) return;
+    positions.forEach(({ id, x, y }) => {
+        if (state[wsId].nodes[id]) {
+            state[wsId].nodes[id].x = x;
+            state[wsId].nodes[id].y = y;
+        }
+      });
+    },
+
     setNodes(state, { payload: { wsId, nodes } }) {
       if (state[wsId]) state[wsId].nodes = nodes;
     },
@@ -245,9 +256,13 @@ function resolveAffectedWsId(action) {
 
 const sqlitePersistenceMiddleware = storeApi => next => action => {
   const result = next(action);  // reducer runs first
+  const SKIP_ACTIONS = new Set([
+    "workspaces/hydrateWorkspaces",
+    "workspaces/setNodes",          
+  ]);
 
   if (!action.type.startsWith("workspaces/"))        return result;
-  if (action.type === "workspaces/hydrateWorkspaces") return result;  // skip — this IS the load
+  if (SKIP_ACTIONS.has(action.type)) return result;  // skip — transient actions
 
   const api = window?.api;
   if (!api) return result;  // no Electron context — dev browser fallback
