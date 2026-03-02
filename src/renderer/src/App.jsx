@@ -10,6 +10,30 @@ import {
   selectNodes, selectCharacters, selectStories, selectRelationships, selectSettings,
 } from "./store";
 
+// -- Database getter and setter.
+const loadItems = async () => {
+  try {
+    const notes = await window.api.getItems();
+    console.log("Loaded notes:", notes);
+  } catch (error) {
+    console.error("Error loading notes:", error);
+  }
+};
+
+const addItem = async (name, content) => {
+  try {
+    const note = { name, content };
+    const result = await window.api.addItem(note);
+    console.log("Added note:", result);
+  } catch (error) {
+    console.error("Error adding note:", error);
+  }
+};
+
+await window.api.getItems().then(
+  items => { console.log("Loaded items:", items); }).catch(error => { console.error("Error loading items:", error); }
+);
+
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const T = {
   fontSerif:   "'Crimson Pro', serif",

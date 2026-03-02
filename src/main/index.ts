@@ -3,7 +3,10 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
+import { initDatabase, getAllItems, addItem, closeDatabase, addManyItems } from './database'
+
 function createWindow(): void {
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -35,12 +38,53 @@ function createWindow(): void {
   }
 }
 
+// Prevent issues from having multiple program instances open simultaneously.
+const instLock = app.requestSingleInstanceLock()
+if (!instLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => { // If an instance exists, focus it instead of loading a duplicate.
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
+
+  initDatabase()
+
+  // Secure IPC handlers
+
+  ipcMain.handle('db:add-item', (_, note: {name: string, content: any}) => {
+    if (typeof note !== 'object' || typeof note.name !== 'string' || typeof note.content !== 'string')
+      throw new Error('Invalid database content')
+
+    if (note.name.length > 200)
+      throw new Error('Invalid database content')
+
+    return addItem(note.name, note.content)
+  })
+
+  ipcMain.handle('db:get-items', () => {
+    return getAllItems()
+  })
+
+  ipcMain.handle('db:add-many-items', (_, items) => {
+    if (!Array.isArray(items) || items.some(item => typeof item.name !== 'string' || item.name.length > 200))
+      throw new Error('Invalid database content')
+
+    addManyItems(items)
+    return { success: true }
+  })
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -70,5 +114,7 @@ app.on('window-all-closed', () => {
   }
 })
 
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+// Safely deloads database to prevent data loss or corruption.
+app.on('before-quit', () => {
+  closeDatabase()
+})
