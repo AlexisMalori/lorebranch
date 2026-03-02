@@ -1004,6 +1004,18 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
         <button className="btn btn-ghost" onClick={() => { setZoom(1); setPan({ x: 40, y: 40 }); }} style={{ padding: "6px 10px" }}>⊙</button>
       </div>
       <div style={{ position: "absolute", bottom: 16, left: 16, fontFamily: T.fontMono, fontSize: 10, color: T.textTiny }}>scroll zoom · alt+drag pan · drag-select · ⇝ connect</div>
+
+      {Object.keys(nodes).length === 0 && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none", userSelect: "none" }}>
+          <div style={{ fontFamily: T.fontSerif, fontSize: 28, color: T.textInvis, marginBottom: 10 }}>◈</div>
+          <div style={{ fontFamily: T.fontSerif, fontSize: 18, color: T.textGhost, marginBottom: 8 }}>This workspace is empty</div>
+          <div style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textDeep, textAlign: "center", lineHeight: 1.9 }}>
+            press <span style={{ color: T.textFaint }}>+ Node</span> in the top bar to add your first node<br />
+            or <span style={{ color: T.textFaint }}>↑ Load File</span> in the sidebar to import an existing tree
+          </div>
+        </div>
+      )}
+      
       {hoveredEdge && <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", fontFamily: T.fontMono, fontSize: 10, color: T.red, background: T.bgApp, border: "1px solid #6a3030", padding: "4px 14px", borderRadius: 3, pointerEvents: "none" }}>click edge to disconnect</div>}
       {connecting && connectHoverTarget && (
         <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", fontFamily: T.fontMono, fontSize: 10, background: T.bgApp, border: `1px solid ${nodes[connecting.fromId]?.children.includes(connectHoverTarget) ? T.redBorder : "#4a6030"}`, color: nodes[connecting.fromId]?.children.includes(connectHoverTarget) ? T.red : "#90c060", padding: "4px 14px", borderRadius: 3, pointerEvents: "none" }}>
