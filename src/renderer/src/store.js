@@ -42,7 +42,7 @@ export function mkWorkspace(title, nodes) {
   };
 }
 
-// ── Default data (only used when DB is empty) ─────────────────────────────────
+// ── Default data (only used when DB is empty on first launch) ─────────────────
 const INITIAL_NODES = {
   "1": { id: "1", title: "The Beginning", body: "# Chapter One\n\nEvery story starts with a **choice**. This is yours.\n\nWhat path will you take?", type: "Narrative", editedAt: new Date("2025-01-10T09:00:00").toISOString(), x: 400, y: 80, children: ["2", "3"], color: "none", icon: null, images: [] },
   "2": { id: "2", title: "The Forest Path", body: "## Into the Woods\n\nYou step into a _dense forest_, the canopy blocking most of the sun.\n\n> The air smells of pine and something else...\n\nAhead the path splits again.", type: "Narrative", editedAt: new Date("2025-01-11T14:22:00").toISOString(), x: 180, y: 280, children: ["4", "5"], color: "sage", icon: null, images: [] },
@@ -59,14 +59,15 @@ function makeDefaultWorkspace() {
 // ── workspacesSlice ───────────────────────────────────────────────────────────
 const workspacesSlice = createSlice({
   name: "workspaces",
-  initialState: {},   // always starts empty — bootstrapFromDB() hydrates it
+  initialState: {},
   reducers: {
 
-    // Replaces entire slice from DB on mount. Not a mutation — excluded from persistence.
+    // Replaces entire slice on mount — excluded from all DB writes
     hydrateWorkspaces(state, { payload: workspacesMap }) {
       return workspacesMap;
     },
 
+    // ── Workspaces ──────────────────────────────────────────────────────────
     importWorkspace(state, { payload: ws }) {
       state[ws.id] = ws;
     },
@@ -77,19 +78,20 @@ const workspacesSlice = createSlice({
       delete state[id];
     },
 
-    commitNodePositions(state, { payload: { wsId, positions } }) {
-    // positions = [{ id, x, y }, ...]
-    if (!state[wsId]) return;
-    positions.forEach(({ id, x, y }) => {
-        if (state[wsId].nodes[id]) {
-            state[wsId].nodes[id].x = x;
-            state[wsId].nodes[id].y = y;
-        }
-      });
-    },
-
+    // ── Nodes ───────────────────────────────────────────────────────────────
+    // setNodes: transient drag update — Redux only, never hits the DB
     setNodes(state, { payload: { wsId, nodes } }) {
       if (state[wsId]) state[wsId].nodes = nodes;
+    },
+    // commitNodePositions: fired on mouseup — DB write via upsertManyNodes
+    commitNodePositions(state, { payload: { wsId, positions } }) {
+      if (!state[wsId]) return;
+      positions.forEach(({ id, x, y }) => {
+        if (state[wsId].nodes[id]) {
+          state[wsId].nodes[id].x = x;
+          state[wsId].nodes[id].y = y;
+        }
+      });
     },
     addNode(state, { payload: { wsId, node, parentId } }) {
       if (!state[wsId]) return;
@@ -123,9 +125,11 @@ const workspacesSlice = createSlice({
     },
     disconnectNodes(state, { payload: { wsId, fromId, toId } }) {
       if (!state[wsId]?.nodes[fromId]) return;
-      state[wsId].nodes[fromId].children = state[wsId].nodes[fromId].children.filter(c => c !== toId);
+      state[wsId].nodes[fromId].children =
+        state[wsId].nodes[fromId].children.filter(c => c !== toId);
     },
 
+    // ── Characters ──────────────────────────────────────────────────────────
     addCharacter(state, { payload: { wsId, character } }) {
       if (!state[wsId]) return;
       state[wsId].characters[character.id] = character;
@@ -137,11 +141,16 @@ const workspacesSlice = createSlice({
     deleteCharacter(state, { payload: { wsId, id } }) {
       if (!state[wsId]) return;
       delete state[wsId].characters[id];
-      Object.values(state[wsId].stories).forEach(s => { s.charIds = s.charIds.filter(c => c !== id); });
+      Object.values(state[wsId].stories).forEach(s => {
+        s.charIds = s.charIds.filter(c => c !== id);
+      });
       const rels = state[wsId].relationships;
-      Object.keys(rels).forEach(rid => { if (rels[rid].charAId === id || rels[rid].charBId === id) delete rels[rid]; });
+      Object.keys(rels).forEach(rid => {
+        if (rels[rid].charAId === id || rels[rid].charBId === id) delete rels[rid];
+      });
     },
 
+    // ── Stories ─────────────────────────────────────────────────────────────
     saveStory(state, { payload: { wsId, story } }) {
       if (!state[wsId]) return;
       state[wsId].stories[story.id] = { ...story, updatedAt: new Date().toISOString() };
@@ -152,10 +161,15 @@ const workspacesSlice = createSlice({
     },
     deleteStory(state, { payload: { wsId, storyId, scope, fromCharId } }) {
       if (!state[wsId]) return;
-      if (scope === "all") delete state[wsId].stories[storyId];
-      else { const s = state[wsId].stories[storyId]; if (s) s.charIds = s.charIds.filter(c => c !== fromCharId); }
+      if (scope === "all") {
+        delete state[wsId].stories[storyId];
+      } else {
+        const s = state[wsId].stories[storyId];
+        if (s) s.charIds = s.charIds.filter(c => c !== fromCharId);
+      }
     },
 
+    // ── Relationships ────────────────────────────────────────────────────────
     addRelationship(state, { payload: { wsId, relationship } }) {
       if (!state[wsId]) return;
       state[wsId].relationships[relationship.id] = relationship;
@@ -172,12 +186,11 @@ const workspacesSlice = createSlice({
 });
 
 // ── uiSlice ───────────────────────────────────────────────────────────────────
-// Never touches the DB. Purely in-memory between sessions.
 const uiSlice = createSlice({
   name: "ui",
   initialState: {
     activeWsId: null,
-    dbReady: false,              // false until bootstrapFromDB() resolves
+    dbReady: false,
     view: "overview",
     selectedNodeId: null,
     editingNodeId: null,
@@ -196,7 +209,6 @@ const uiSlice = createSlice({
     wsNameDraft: "",
   },
   reducers: {
-    // Fired once after hydrateWorkspaces — sets the starting active workspace
     dbLoaded(state, { payload: { firstWsId } }) {
       state.activeWsId = firstWsId;
       state.dbReady = true;
@@ -226,61 +238,194 @@ const uiSlice = createSlice({
     setExportLabel(state, { payload }) { state.exportLabel = payload; },
     setWsNameDraft(state, { payload }) { state.wsNameDraft = payload; },
     activateWorkspace(state, { payload: id }) {
-      state.activeWsId = id; state.view = "overview"; state.selectedNodeId = null; state.modal = null;
+      state.activeWsId = id; state.view = "overview";
+      state.selectedNodeId = null; state.modal = null;
     },
     workspaceDeleted(state, { payload: fallbackId }) {
-      state.activeWsId = fallbackId; state.view = "overview"; state.selectedNodeId = null; state.modal = null;
+      state.activeWsId = fallbackId; state.view = "overview";
+      state.selectedNodeId = null; state.modal = null;
     },
     nodeClosed(state) { state.selectedNodeId = null; state.view = "overview"; },
   },
 });
 
 // ── SQLite persistence middleware ─────────────────────────────────────────────
-// After every workspaces/* action (except hydration), reads the updated
-// workspace from state and upserts it to SQLite via window.api.addItem().
-// Uses wsId as the row key — addItem is treated as insert-or-replace.
+// Fires after each workspaces/* reducer, calling the narrowest possible
+// IPC channel for the data that actually changed:
 //
-// deleteWorkspace writes a { _deleted: true } tombstone so the row is
-// recognised as gone on next load. If your Electron backend adds a proper
-// deleteItem(name) method, replace the tombstone write with that call.
-
-function resolveAffectedWsId(action) {
-  const p = action.payload;
-  if (!p) return null;
-  if (action.type === "workspaces/deleteWorkspace")  return p;          // payload = wsId string
-  if (action.type === "workspaces/importWorkspace")  return p.id;       // payload = full ws object
-  if (action.type === "workspaces/updateWorkspace")  return p.id;       // payload = { id, patch }
-  if (typeof p === "object" && p.wsId)               return p.wsId;     // all other actions
-  return null;
-}
+//  workspaces     → db:upsert-workspace / db:delete-workspace
+//  nodes          → db:upsert-node / db:upsert-many-nodes /
+//                   db:delete-node / db:delete-many-nodes /
+//                   db:update-node-children
+//  characters     → db:upsert-character / db:delete-character
+//  stories        → db:upsert-story / db:delete-story /
+//                   db:detach-char-from-story
+//  relationships  → db:upsert-relationship / db:delete-relationship
+//
+// hydrateWorkspaces and setNodes are skipped (pure Redux, never touch the DB).
 
 const sqlitePersistenceMiddleware = storeApi => next => action => {
   const result = next(action);  // reducer runs first
-  const SKIP_ACTIONS = new Set([
-    "workspaces/hydrateWorkspaces",
-    "workspaces/setNodes",          
-  ]);
+  const { type, payload: p } = action;
 
-  if (!action.type.startsWith("workspaces/"))        return result;
-  if (SKIP_ACTIONS.has(action.type)) return result;  // skip — transient actions
+  if (!type.startsWith("workspaces/")) return result;
 
   const api = window?.api;
-  if (!api) return result;  // no Electron context — dev browser fallback
+  if (!api) return result;  // no Electron context
 
-  const wsId = resolveAffectedWsId(action);
-  if (!wsId) return result;
+  const state = storeApi.getState().workspaces;
 
-  if (action.type === "workspaces/deleteWorkspace") {
-    api.deleteItem(wsId)
-  .catch(err => console.error("[db] delete failed:", wsId, err));
-    return result;
+  // Helper — fire and log
+  const call = (channel, args) =>
+    api[channel]?.(args)?.catch(err => console.error(`[db] ${channel} failed:`, err));
+
+  switch (type) {
+
+    // ── Skip — these are load-time or transient ──────────────────────────────
+    case "workspaces/hydrateWorkspaces":
+    case "workspaces/setNodes":
+      break;
+
+    // ── Workspace-level ──────────────────────────────────────────────────────
+    case "workspaces/importWorkspace": {
+      const ws = p;
+      call("upsertWorkspace", { id: ws.id, name: ws.title, settings: ws.settings });
+      // Also write all child entities for a newly imported workspace
+      const nodes = Object.values(ws.nodes || {});
+      if (nodes.length) call("upsertManyNodes", { wsId: ws.id, nodes });
+      Object.values(ws.characters || {}).forEach(c => call("upsertCharacter", { wsId: ws.id, character: c }));
+      Object.values(ws.stories    || {}).forEach(s => call("upsertStory",     { wsId: ws.id, story: s }));
+      Object.values(ws.relationships || {}).forEach(r => call("upsertRelationship", { wsId: ws.id, relationship: r }));
+      break;
+    }
+
+    case "workspaces/updateWorkspace": {
+      const ws = state[p.id];
+      if (ws) call("upsertWorkspace", { id: ws.id, name: ws.title, settings: ws.settings });
+      break;
+    }
+
+    case "workspaces/deleteWorkspace":
+      // CASCADE in SQLite removes all child rows automatically
+      call("deleteWorkspace", p);
+      break;
+
+    // ── Node writes ──────────────────────────────────────────────────────────
+    case "workspaces/addNode": {
+      const { wsId, node, parentId } = p;
+      call("upsertNode", { wsId, node });
+      // Parent's children array also changed — write only that column
+      if (parentId && state[wsId]?.nodes[parentId]) {
+        call("updateNodeChildren", {
+          nodeId:   parentId,
+          children: state[wsId].nodes[parentId].children,
+        });
+      }
+      break;
+    }
+
+    case "workspaces/updateNode": {
+      const { wsId, id } = p;
+      const node = state[wsId]?.nodes[id];
+      if (node) call("upsertNode", { wsId, node });
+      break;
+    }
+
+    case "workspaces/commitNodePositions": {
+      // Batch — one transaction for all dragged nodes
+      const { wsId, positions } = p;
+      const nodes = positions
+        .map(({ id }) => state[wsId]?.nodes[id])
+        .filter(Boolean);
+      if (nodes.length) call("upsertManyNodes", { wsId, nodes });
+      break;
+    }
+
+    case "workspaces/deleteNode": {
+      const { wsId, id } = p;
+      call("deleteNode", id);
+      // Any node that had this as a child now has an updated children array
+      Object.values(state[wsId]?.nodes || {}).forEach(n => {
+        if (!n.children.includes(id)) return; // already removed in reducer
+        // The reducer already removed it; write the updated list
+        call("updateNodeChildren", { nodeId: n.id, children: n.children });
+      });
+      break;
+    }
+
+    case "workspaces/deleteNodes": {
+      const { wsId, ids } = p;
+      call("deleteManyNodes", ids);
+      // Write updated children arrays for any surviving parent nodes
+      Object.values(state[wsId]?.nodes || {}).forEach(n => {
+        call("updateNodeChildren", { nodeId: n.id, children: n.children });
+      });
+      break;
+    }
+
+    case "workspaces/toggleConnect":
+    case "workspaces/disconnectNodes": {
+      const { wsId, fromId } = p;
+      const node = state[wsId]?.nodes[fromId];
+      if (node) call("updateNodeChildren", { nodeId: fromId, children: node.children });
+      break;
+    }
+
+    // ── Character writes ─────────────────────────────────────────────────────
+    case "workspaces/addCharacter":
+    case "workspaces/updateCharacter": {
+      const { wsId, character, id } = p;
+      const charId = character?.id ?? id;
+      const char = state[wsId]?.characters[charId];
+      if (char) call("upsertCharacter", { wsId, character: char });
+      break;
+    }
+
+    case "workspaces/deleteCharacter": {
+      const { wsId, id } = p;
+      call("deleteCharacter", id);
+      // Cascade in SQLite removes char_stories rows, but we must also update
+      // any relationship rows — those are deleted by CASCADE too, so no extra work.
+      break;
+    }
+
+    // ── Story writes ─────────────────────────────────────────────────────────
+    case "workspaces/saveStory":
+    case "workspaces/createStory": {
+      const { wsId, story } = p;
+      const saved = state[wsId]?.stories[story.id];
+      if (saved) call("upsertStory", { wsId, story: saved });
+      break;
+    }
+
+    case "workspaces/deleteStory": {
+      const { wsId, storyId, scope, fromCharId } = p;
+      if (scope === "all") {
+        call("deleteStory", storyId);
+      } else {
+        // Only detach one character — story itself survives
+        call("detachCharFromStory", { charId: fromCharId, storyId });
+      }
+      break;
+    }
+
+    // ── Relationship writes ──────────────────────────────────────────────────
+    case "workspaces/addRelationship":
+    case "workspaces/updateRelationship": {
+      const { wsId, relationship, id } = p;
+      const relId = relationship?.id ?? id;
+      const rel = state[wsId]?.relationships[relId];
+      if (rel) call("upsertRelationship", { wsId, relationship: rel });
+      break;
+    }
+
+    case "workspaces/deleteRelationship":
+      call("deleteRelationship", p.id);
+      break;
+
+    default:
+      break;
   }
-
-  const ws = storeApi.getState().workspaces[wsId];
-  if (!ws) return result;
-
-  api.addItem({ name: wsId, content: JSON.stringify(ws) })
-  .catch(err => console.error("[db] persist failed:", wsId, err));
 
   return result;
 };
@@ -296,40 +441,28 @@ export const store = configureStore({
 });
 
 // ── bootstrapFromDB ───────────────────────────────────────────────────────────
-// Called once from main.jsx after the store is created.
-// Loads all rows from SQLite, parses them, skips tombstones/corrupt rows,
-// hydrates workspacesSlice, then tells uiSlice which workspace to show first.
-// Falls back gracefully if window.api is absent (browser dev mode).
+// Called once from main.jsx. Loads all workspaces via db:load-all,
+// hydrates Redux, then sets the first workspace active.
 export async function bootstrapFromDB(dispatch) {
   try {
     const api = window?.api;
 
     if (!api) {
+      // Browser dev mode — seed with default workspace, skip DB
       const ws = makeDefaultWorkspace();
       dispatch(workspacesActions.hydrateWorkspaces({ [ws.id]: ws }));
       dispatch(uiActions.dbLoaded({ firstWsId: ws.id }));
       return;
     }
 
-    const items = await api.getItems();  // [{ name: wsId, content: jsonString }, ...]
-
-    const workspacesMap = {};
-    for (const item of items) {
-      try {
-        const ws = JSON.parse(item.content);
-        if (ws._deleted) continue;
-        if (!ws.id || !ws.title) continue;  // guard against corrupt rows
-        workspacesMap[ws.id] = ws;
-      } catch {
-        console.warn("[db] skipping unparseable row:", item.name);
-      }
-    }
+    const workspacesMap = await api.loadAll();  // calls db:load-all → loadAllWorkspaces()
 
     if (Object.keys(workspacesMap).length === 0) {
-      // Fresh install — seed with default workspace
+      // Fresh install — create default workspace and persist it
       const ws = makeDefaultWorkspace();
+      await api.upsertWorkspace({ id: ws.id, name: ws.title, settings: ws.settings });
+      await api.upsertManyNodes({ wsId: ws.id, nodes: Object.values(ws.nodes) });
       workspacesMap[ws.id] = ws;
-      await api.addItem({ name: ws.id, content: JSON.stringify(ws) });
     }
 
     dispatch(workspacesActions.hydrateWorkspaces(workspacesMap));
@@ -337,7 +470,6 @@ export async function bootstrapFromDB(dispatch) {
 
   } catch (err) {
     console.error("[db] bootstrap failed:", err);
-    // Hard fallback — app is never stuck on a blank screen
     const ws = makeDefaultWorkspace();
     dispatch(workspacesActions.hydrateWorkspaces({ [ws.id]: ws }));
     dispatch(uiActions.dbLoaded({ firstWsId: ws.id }));
