@@ -1,3 +1,6 @@
+// main/database.ts
+// stores logic for all database interactions & CRUD operations
+
 import Database from 'better-sqlite3'
 import path from 'path'
 import { app } from 'electron'

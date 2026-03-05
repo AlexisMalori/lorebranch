@@ -1,3 +1,6 @@
+// main/schema.ts
+// handles storage of SQL schema strings to improve readability of database structure.
+
 // ── Workspaces ────────────────────────────────────────────────────────────────
 export const workspaceSchema = `CREATE TABLE IF NOT EXISTS workspaces (
     id        TEXT PRIMARY KEY,

@@ -1,3 +1,6 @@
+// renderer/src/App.jsx
+// handles main React app frontend
+
 // DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -8,7 +11,6 @@ import {
   workspacesActions, uiActions,
   selectAllWorkspaces, selectUi, selectActiveWsId, selectActiveWorkspace,
   selectNodes, selectCharacters, selectStories, selectRelationships, selectSettings,
-  selectDbReady
 } from "./store";
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
@@ -82,6 +84,27 @@ function statMod(v) { return Math.floor((v - 10) / 2); }
 // ── IO helpers ────────────────────────────────────────────────────────────────
 function readFileAsText(f) { return new Promise((r, j) => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.onerror = j; rd.readAsText(f); }); }
 function readFileAsDataURL(f) { return new Promise((r, j) => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.onerror = j; rd.readAsDataURL(f); }); }
+// Resolves an app://images/ URL to a data-URL for rendering.
+// Returns null while loading, then the data-URL once resolved.
+function useAppImage(src) {
+  const [dataUrl, setDataUrl] = useState(null);
+  useEffect(() => {
+    if (!src) { setDataUrl(null); return; }
+    if (src.startsWith("data:")) { setDataUrl(src); return; }
+    if (src.startsWith("app://")) {
+      let cancelled = false;
+      window.api.loadImage(src).then(url => { if (!cancelled) setDataUrl(url); });
+      return () => { cancelled = true; };
+    }
+    setDataUrl(src);
+  }, [src]);
+  return dataUrl;
+}
+function AppImage({ src, alt = "", style, ...rest }) {
+  const resolved = useAppImage(src);
+  if (!resolved) return null;
+  return <img src={resolved} alt={alt} style={style} {...rest} />;
+}
 function downloadJSON(obj, name) {
   const b = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
   const u = URL.createObjectURL(b), a = document.createElement("a");
@@ -145,14 +168,6 @@ export default function App() {
   const stories     = useSelector(selectStories);
   const relationships = useSelector(selectRelationships);
   const settings    = useSelector(selectSettings);
-  const dbReady = useSelector(selectDbReady);
-  if (!dbReady) return (
-    <div style={{ width: "100%", height: "100vh", background: "#1a1814",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#5a5448" }}>
-      loading…
-    </div>
-  );
 
   const { view, selectedNodeId, editingNodeId, activeCharId, sidebarOpen, modal,
           toast, storyModal, deleteStoryModal,
@@ -365,9 +380,7 @@ export default function App() {
             <OverviewCanvas nodes={nodes} setNodes={setNodes}
               onOpenBubble={openBubble} onToggleConnect={toggleConnect}
               onDisconnect={disconnectNodes} onDeleteNodes={deleteNodes}
-              onUpdateNode={updateNode} showToast={showToast}
-              onCommitNodePositions={(positions) => dispatch(workspacesActions.commitNodePositions({ wsId: activeWsId, positions }))}
-            />
+              onUpdateNode={updateNode} showToast={showToast} />
           )}
           {view === "bubble" && selectedNodeId && nodes[selectedNodeId] && (
             <BubbleView
@@ -679,7 +692,7 @@ function StoryEditorModal({ mode, story, defaults, characters, nodes, onSave, on
                 return (
                   <div key={ch.id} onClick={() => toggleChar(ch.id)}
                     style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, border: `1px solid ${sel ? T.gold : T.borderStrong}`, background: sel ? "#c9a96e18" : "transparent", cursor: "pointer", transition: "all 0.13s" }}>
-                    {ch.portrait && <img src={ch.portrait} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover" }} />}
+                    {ch.portrait && <AppImage src={ch.portrait} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover" }} />}
                     <span style={{ fontFamily: T.fontSerif, fontSize: 13, color: sel ? T.gold : T.textDim }}>{ch.name || "Unnamed"}</span>
                   </div>
                 );
@@ -729,7 +742,7 @@ function StoryCard({ story, characters, nodes, onEdit, onDelete, onOpenChar, onO
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
           {involvedChars.slice(0, 4).map((ch, i) => (
             <div key={ch.id} style={{ width: 20, height: 20, borderRadius: "50%", overflow: "hidden", background: T.bgDeep, border: `1px solid ${T.borderStrong}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", marginLeft: i === 0 ? 0 : -6 }} title={ch.name}>
-              {ch.portrait ? <img src={ch.portrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 9, opacity: 0.4 }}>⚔</span>}
+              {ch.portrait ? <AppImage src={ch.portrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 9, opacity: 0.4 }}>⚔</span>}
             </div>
           ))}
           {involvedChars.length > 4 && <span style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textGhost }}>+{involvedChars.length - 4}</span>}
@@ -747,7 +760,7 @@ function StoryCard({ story, characters, nodes, onEdit, onDelete, onOpenChar, onO
           <div style={{ padding: "8px 12px", borderTop: "1px solid #1e1c18", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {involvedChars.map(ch => (
               <button key={ch.id} className="btn btn-ghost" style={{ fontSize: 9, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4 }} onClick={() => onOpenChar && onOpenChar(ch.id)}>
-                {ch.portrait && <img src={ch.portrait} alt="" style={{ width: 14, height: 14, borderRadius: "50%", objectFit: "cover" }} />}
+                {ch.portrait && <AppImage src={ch.portrait} alt="" style={{ width: 14, height: 14, borderRadius: "50%", objectFit: "cover" }} />}
                 {ch.name}
               </button>
             ))}
@@ -772,7 +785,7 @@ function StoryCard({ story, characters, nodes, onEdit, onDelete, onOpenChar, onO
 // ═══════════════════════════════════════════════════════════════════════════════
 const NODE_W = 230, NODE_H = 90;
 
-function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, onCommitNodePositions, showToast }) {
+function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, showToast }) {
   const canvasRef = useRef(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -817,18 +830,7 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
 
   const onMouseUp = useCallback((e) => {
     if (panning) { setPanning(null); return; }
-    if (dragging) {
-      const positions = dragging.ids
-        .filter(id => nodes[id])
-        .map(id => ({
-            id,
-            x: dragging.startPositions[id].x + (e.clientX - dragging.startX) / zoom,
-            y: dragging.startPositions[id].y + (e.clientY - dragging.startY) / zoom,
-        }));
-      onCommitNodePositions(positions);
-      setDragging(null);
-      return;
-    }
+    if (dragging) { setDragging(null); return; }
     if (connecting) {
       const { x, y } = toCanvas(e.clientX, e.clientY);
       const target = Object.values(nodes).find(n => x >= n.x && x <= n.x + NODE_W && y >= n.y && y <= n.y + NODE_H && n.id !== connecting.fromId);
@@ -956,7 +958,7 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
                 {gc.glow && <div style={{ height: 2, background: `linear-gradient(90deg,transparent,${gc.glow}80,transparent)` }} />}
                 <div style={{ display: "flex" }}>
                   <div style={{ width: 60, flexShrink: 0, background: T.bgSurface, borderRight: `1px solid ${isSelected ? T.gold : gBorder}`, display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 0" }}>
-                    {node.icon ? <img src={node.icon} alt="" style={{ width: 42, height: 42, borderRadius: 5, objectFit: "cover" }} />
+                    {node.icon ? <AppImage src={node.icon} alt="" style={{ width: 42, height: 42, borderRadius: 5, objectFit: "cover" }} />
                       : <div style={{ width: 42, height: 42, borderRadius: 5, background: T.bgDeep, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {gc.glow ? <div style={{ width: 14, height: 14, borderRadius: "50%", background: gc.glow, opacity: 0.45 }} /> : <span style={{ fontSize: 16, opacity: 0.15, color: T.gold }}>◈</span>}
                       </div>}
@@ -1002,7 +1004,6 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
         <button className="btn btn-ghost" onClick={() => { setZoom(1); setPan({ x: 40, y: 40 }); }} style={{ padding: "6px 10px" }}>⊙</button>
       </div>
       <div style={{ position: "absolute", bottom: 16, left: 16, fontFamily: T.fontMono, fontSize: 10, color: T.textTiny }}>scroll zoom · alt+drag pan · drag-select · ⇝ connect</div>
-
       {Object.keys(nodes).length === 0 && (
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none", userSelect: "none" }}>
           <div style={{ fontFamily: T.fontSerif, fontSize: 28, color: T.textInvis, marginBottom: 10 }}>◈</div>
@@ -1013,7 +1014,6 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
           </div>
         </div>
       )}
-
       {hoveredEdge && <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", fontFamily: T.fontMono, fontSize: 10, color: T.red, background: T.bgApp, border: "1px solid #6a3030", padding: "4px 14px", borderRadius: 3, pointerEvents: "none" }}>click edge to disconnect</div>}
       {connecting && connectHoverTarget && (
         <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", fontFamily: T.fontMono, fontSize: 10, background: T.bgApp, border: `1px solid ${nodes[connecting.fromId]?.children.includes(connectHoverTarget) ? T.redBorder : "#4a6030"}`, color: nodes[connecting.fromId]?.children.includes(connectHoverTarget) ? T.red : "#90c060", padding: "4px 14px", borderRadius: 3, pointerEvents: "none" }}>
@@ -1041,9 +1041,9 @@ function BubbleView({ node, nodes, stories, allStories, characters, editingId, s
 
   const save = () => { onUpdate(node.id, draft); setEditingId(null); };
   const cancel = () => { setDraft({ title: node.title, body: node.body, type: node.type }); setEditingId(null); };
-  const handleIconUpload = async (e) => { const f = e.target.files[0]; if (!f) return; onUpdate(node.id, { icon: await readFileAsDataURL(f) }); e.target.value = ""; };
-  const handleImgsUpload = async (e) => { const fs = Array.from(e.target.files); if (!fs.length) return; const urls = await Promise.all(fs.map(readFileAsDataURL)); onUpdate(node.id, { images: [...(node.images || []), ...urls] }); e.target.value = ""; };
-  const removeImg = (i) => { const a = [...(node.images || [])]; a.splice(i, 1); onUpdate(node.id, { images: a }); };
+  const handleIconUpload = async (e) => { const f = e.target.files[0]; if (!f) return; const dataUrl = await readFileAsDataURL(f); const appUrl = await window.api.saveImage(dataUrl); if (node.icon) window.api.deleteImage(node.icon); onUpdate(node.id, { icon: appUrl }); e.target.value = ""; };
+  const handleImgsUpload = async (e) => { const fs = Array.from(e.target.files); if (!fs.length) return; const appUrls = await Promise.all(fs.map(async f => window.api.saveImage(await readFileAsDataURL(f)))); onUpdate(node.id, { images: [...(node.images || []), ...appUrls] }); e.target.value = ""; };
+  const removeImg = (i) => { const a = [...(node.images || [])]; const [removed] = a.splice(i, 1); if (removed) window.api.deleteImage(removed); onUpdate(node.id, { images: a }); };
   const imgCount = (node.images || []).length;
   const storyCount = stories.length;
 
@@ -1059,7 +1059,7 @@ function BubbleView({ node, nodes, stories, allStories, characters, editingId, s
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 12 }}>
           <div className="icon-wrap" style={{ flexShrink: 0, position: "relative", cursor: "pointer", width: 56, height: 56 }} onClick={() => iconRef.current.click()}>
             <div style={{ width: 56, height: 56, borderRadius: 8, overflow: "hidden", border: `1px solid ${gc.glow ? gc.glow + "55" : T.borderStrong}`, background: T.bgApp, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: gc.glow ? `0 0 12px ${gc.glow}30` : "none" }}>
-              {node.icon ? <img src={node.icon} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 24, opacity: 0.2, color: T.gold }}>◈</span>}
+              {node.icon ? <AppImage src={node.icon} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 24, opacity: 0.2, color: T.gold }}>◈</span>}
             </div>
             <div className="icon-hover-overlay">ICON</div>
             <input ref={iconRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleIconUpload} />
@@ -1089,7 +1089,7 @@ function BubbleView({ node, nodes, stories, allStories, characters, editingId, s
                 style={{ background: col.glow || "#2c2820", borderColor: node.color === col.id ? "#fff" : (col.glow ? col.glow + "55" : T.borderStrong), width: 17, height: 17 }}
                 title={col.label} onClick={() => onUpdate(node.id, { color: col.id })} />
             ))}
-            {node.icon && <button className="btn btn-danger" style={{ padding: "2px 8px", fontSize: 9, marginLeft: 2 }} onClick={() => onUpdate(node.id, { icon: null })}>✕ icon</button>}
+            {node.icon && <button className="btn btn-danger" style={{ padding: "2px 8px", fontSize: 9, marginLeft: 2 }} onClick={() => { window.api.deleteImage(node.icon); onUpdate(node.id, { icon: null }); }}>✕ icon</button>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 0 }}>
@@ -1138,7 +1138,7 @@ function BubbleView({ node, nodes, stories, allStories, characters, editingId, s
                 : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
                   {(node.images || []).map((src, i) => (
                     <div key={i} className="image-thumb">
-                      <img src={src} alt="" style={{ width: "100%", display: "block", borderRadius: 6, border: `1px solid ${T.borderStrong}`, objectFit: "cover", maxHeight: 180 }} />
+                      <AppImage src={src} alt="" style={{ width: "100%", display: "block", borderRadius: 6, border: `1px solid ${T.borderStrong}`, objectFit: "cover", maxHeight: 180 }} />
                       <button className="img-remove" onClick={() => removeImg(i)}>✕</button>
                     </div>
                   ))}
@@ -1193,7 +1193,7 @@ function NavCard({ node, onClick, action }) {
       style={{ background: "#201e19", border: `1px solid ${gc.glow ? gc.glow + "35" : T.borderMid}`, borderRadius: 5, padding: "8px 10px", marginBottom: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, transition: "border-color 0.15s,box-shadow 0.15s", boxShadow: gc.glow ? `0 0 8px ${gc.glow}15` : "none" }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = gc.glow ? gc.glow + "70" : "#4a4040"; e.currentTarget.style.boxShadow = gc.glow ? `0 0 14px ${gc.glow}30` : "none"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = gc.glow ? gc.glow + "35" : T.borderMid; e.currentTarget.style.boxShadow = gc.glow ? `0 0 8px ${gc.glow}15` : "none"; }}>
-      {node.icon ? <img src={node.icon} alt="" style={{ width: 28, height: 28, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />
+      {node.icon ? <AppImage src={node.icon} alt="" style={{ width: 28, height: 28, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />
         : gc.glow ? <div style={{ width: 7, height: 7, borderRadius: "50%", background: gc.glow, flexShrink: 0, opacity: 0.6 }} /> : null}
       <div style={{ flex: 1, overflow: "hidden" }}>
         <div style={{ fontFamily: T.fontSerif, fontSize: 14, color: T.textBody, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.title}</div>
@@ -1236,7 +1236,7 @@ function CharactersGallery({ characters, stories, onSelect, onAdd, onDelete }) {
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "#c9a96e60"; e.currentTarget.style.boxShadow = "0 6px 24px #00000060"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = T.borderSub; e.currentTarget.style.boxShadow = "none"; }}>
                   <div style={{ height: 180, background: T.bgSurface, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
-                    {ch.portrait ? <img src={ch.portrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
+                    {ch.portrait ? <AppImage src={ch.portrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
                       : <div style={{ opacity: 0.2, textAlign: "center" }}><div style={{ fontSize: 40 }}>⚔</div></div>}
                     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "6px 8px", background: "linear-gradient(transparent,#000000b0)", display: "flex", gap: 4, justifyContent: "center" }}>
                       {DND_STATS.map(s => (
@@ -1288,8 +1288,8 @@ function CharacterSheet({ character, stories, allStories, nodes, characters, rel
     obj[keys[keys.length - 1]] = val; return next;
   });
 
-  const handlePortraitUpload = async (e) => { const f = e.target.files[0]; if (!f) return; const url = await readFileAsDataURL(f); if (editing) setDF("portrait", url); else onUpdate({ portrait: url }); e.target.value = ""; };
-  const handleFullbodyUpload = async (e) => { const f = e.target.files[0]; if (!f) return; const url = await readFileAsDataURL(f); if (editing) setDF("fullbody", url); else onUpdate({ fullbody: url }); e.target.value = ""; };
+  const handlePortraitUpload = async (e) => { const f = e.target.files[0]; if (!f) return; const dataUrl = await readFileAsDataURL(f); const appUrl = await window.api.saveImage(dataUrl); if (editing) { if (d.portrait) window.api.deleteImage(d.portrait); setDF("portrait", appUrl); } else { if (character.portrait) window.api.deleteImage(character.portrait); onUpdate({ portrait: appUrl }); } e.target.value = ""; };
+  const handleFullbodyUpload = async (e) => { const f = e.target.files[0]; if (!f) return; const dataUrl = await readFileAsDataURL(f); const appUrl = await window.api.saveImage(dataUrl); if (editing) { if (d.fullbody) window.api.deleteImage(d.fullbody); setDF("fullbody", appUrl); } else { if (character.fullbody) window.api.deleteImage(character.fullbody); onUpdate({ fullbody: appUrl }); } e.target.value = ""; };
 
   const d = editing ? draft : character;
   const relCount = relationships.length;
@@ -1331,7 +1331,7 @@ function CharacterSheet({ character, stories, allStories, nodes, characters, rel
           <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 24px" }}>
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-                {character.portrait && <img src={character.portrait} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover", border: `1px solid ${T.borderStrong}` }} />}
+                {character.portrait && <AppImage src={character.portrait} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover", border: `1px solid ${T.borderStrong}` }} />}
                 <div>
                   <div style={{ fontFamily: T.fontSerif, fontSize: 20, fontWeight: 600, color: T.textPrimary }}>{character.name}</div>
                   <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textGhost }}>{[character.race, character.occupation].filter(Boolean).join(" · ") || "—"}</div>
@@ -1364,8 +1364,8 @@ function CharacterSheet({ character, stories, allStories, nodes, characters, rel
         {sheetTab === "sheet" && (
           <div style={{ maxWidth: 960, margin: "0 auto", padding: "24px 24px 48px", display: "flex", gap: 24 }}>
             <div style={{ width: 230, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-              <ImageSlot label="PORTRAIT" aspect="1/1" src={d.portrait} onUpload={handlePortraitUpload} onClear={() => { if (editing) setDF("portrait", null); else onUpdate({ portrait: null }); }} inputRef={portraitRef} placeholder="⚔" />
-              <ImageSlot label="FULL BODY" aspect="1/2" src={d.fullbody} onUpload={handleFullbodyUpload} onClear={() => { if (editing) setDF("fullbody", null); else onUpdate({ fullbody: null }); }} inputRef={fullbodyRef} placeholder="↕" />
+              <ImageSlot label="PORTRAIT" aspect="1/1" src={d.portrait} onUpload={handlePortraitUpload} onClear={() => { const old = editing ? d.portrait : character.portrait; if (old) window.api.deleteImage(old); if (editing) setDF("portrait", null); else onUpdate({ portrait: null }); }} inputRef={portraitRef} placeholder="⚔" />
+              <ImageSlot label="FULL BODY" aspect="1/2" src={d.fullbody} onUpload={handleFullbodyUpload} onClear={() => { const old = editing ? d.fullbody : character.fullbody; if (old) window.api.deleteImage(old); if (editing) setDF("fullbody", null); else onUpdate({ fullbody: null }); }} inputRef={fullbodyRef} placeholder="↕" />
               <div>
                 <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textGhost, letterSpacing: "0.1em", marginBottom: 7 }}>COMBAT STATS</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
@@ -1567,7 +1567,7 @@ function RelationshipCard({ rel, other, myLabel, theirLabel, isEditing, isA, onE
       <div style={{ display: "flex", alignItems: "stretch" }}>
         <div onClick={onNavigate} style={{ width: 80, height: 80, flexShrink: 0, cursor: "pointer", position: "relative", overflow: "hidden", background: T.bgSurface, alignSelf: "stretch" }} title={`Go to ${other.name}'s sheet`}>
           {other.portrait
-            ? <img src={other.portrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }} />
+            ? <AppImage src={other.portrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }} />
             : <div style={{ width: "100%", height: "100%", minHeight: 80, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.18, fontSize: 24 }}>⚔</div>
           }
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0)", transition: "background 0.15s" }}
@@ -1645,7 +1645,7 @@ function ImageSlot({ label, subLabel, aspect, src, onUpload, onClear, inputRef, 
         onClick={() => inputRef.current.click()}
         onMouseEnter={e => e.currentTarget.querySelector(".img-ov").style.opacity = "1"}
         onMouseLeave={e => e.currentTarget.querySelector(".img-ov").style.opacity = "0"}>
-        {src ? <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
+        {src ? <AppImage src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
           : <div style={{ opacity: 0.15, fontFamily: T.fontMono, fontSize: 11, textAlign: "center" }}>{placeholder}</div>}
         <div className="img-ov" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)", opacity: 0, transition: "opacity 0.15s", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4 }}>
           <div style={{ fontFamily: T.fontMono, fontSize: 10, color: "#fff" }}>UPLOAD</div>

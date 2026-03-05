@@ -1,3 +1,6 @@
+// main/index.ts
+// main process entry point: sets up the Electron app, IPC handlers, and database connection.
+
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -12,6 +15,10 @@ import {
   upsertRelationship, deleteRelationship,
   loadAllWorkspaces,
 } from './database'
+
+import { saveImage, loadImageAsDataUrl, deleteImage, deleteImages } from './images'
+
+// so the renderer can load images from it like any normal URL.
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -51,6 +58,8 @@ if (!instLock) {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
+
+
   initDatabase()
 
   // ── Validation helpers ─────────────────────────────────────────────────────
@@ -62,6 +71,34 @@ app.whenReady().then(() => {
     if (typeof v !== 'object' || v === null)
       throw new Error(`Invalid ${label}: expected object`)
   }
+
+  // ── Image handlers ─────────────────────────────────────────────────────────
+
+  // Renderer sends a data-URL; main writes the file and returns an app:// URL.
+  // The app:// URL is what gets stored in Redux and SQLite — never the data-URL.
+  ipcMain.handle('img:save', (_, dataUrl: string) => {
+    assertString(dataUrl, 'dataUrl')
+    if (!dataUrl.startsWith('data:image/'))
+      throw new Error('img:save requires a data:image/ URL')
+    return saveImage(dataUrl)
+  })
+
+  // Load an image by app:// URL, return it as a data-URL for the renderer.
+  ipcMain.handle('img:load', (_, appUrl: string) => {
+    if (typeof appUrl !== 'string') return null
+    return loadImageAsDataUrl(appUrl)
+  })
+
+  // Delete one image file by app:// URL. Called when user explicitly removes an image.
+  ipcMain.handle('img:delete', (_, appUrl: string) => {
+    if (typeof appUrl === 'string') deleteImage(appUrl)
+  })
+
+  // Delete multiple image files in one round-trip.
+  // Called before deleting a node or character that may own several images.
+  ipcMain.handle('img:delete-many', (_, appUrls: string[]) => {
+    if (Array.isArray(appUrls)) deleteImages(appUrls)
+  })
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   ipcMain.handle('db:load-all', () => loadAllWorkspaces())
@@ -99,7 +136,6 @@ app.whenReady().then(() => {
     return deleteManyNodes(ids)
   })
 
-  // Edge connect/disconnect: only the parent's children array changes
   ipcMain.handle('db:update-node-children', (_, { nodeId, children }) => {
     assertString(nodeId, 'nodeId')
     if (!Array.isArray(children)) throw new Error('children must be an array')

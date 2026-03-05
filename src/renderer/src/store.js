@@ -1,3 +1,6 @@
+// renderer/src/store.js
+// handles Redux store setup, including slices, actions, and SQLite persistence middleware.
+
 import { configureStore, createSlice } from "@reduxjs/toolkit";
 
 // ── ID factory ────────────────────────────────────────────────────────────────
@@ -343,11 +346,16 @@ const sqlitePersistenceMiddleware = storeApi => next => action => {
 
     case "workspaces/deleteNode": {
       const { wsId, id } = p;
+      // Read image URLs BEFORE next(action) removed the node from state
+      const preState = storeApi.getState().workspaces[wsId]?.nodes[id];
+      if (preState) {
+        const imgs = [...(preState.images || [])];
+        if (preState.icon) imgs.push(preState.icon);
+        if (imgs.length) call("deleteManyImages", imgs);
+      }
       call("deleteNode", id);
-      // Any node that had this as a child now has an updated children array
       Object.values(state[wsId]?.nodes || {}).forEach(n => {
-        if (!n.children.includes(id)) return; // already removed in reducer
-        // The reducer already removed it; write the updated list
+        if (!n.children.includes(id)) return;
         call("updateNodeChildren", { nodeId: n.id, children: n.children });
       });
       break;
@@ -355,8 +363,15 @@ const sqlitePersistenceMiddleware = storeApi => next => action => {
 
     case "workspaces/deleteNodes": {
       const { wsId, ids } = p;
+      // Collect image URLs from pre-action state (nodes still exist at this point)
+      const preNodes = storeApi.getState().workspaces[wsId]?.nodes || {};
+      const allImgs = ids.flatMap(id => {
+        const n = preNodes[id];
+        if (!n) return [];
+        return [...(n.images || []), ...(n.icon ? [n.icon] : [])];
+      });
+      if (allImgs.length) call("deleteManyImages", allImgs);
       call("deleteManyNodes", ids);
-      // Write updated children arrays for any surviving parent nodes
       Object.values(state[wsId]?.nodes || {}).forEach(n => {
         call("updateNodeChildren", { nodeId: n.id, children: n.children });
       });
@@ -383,9 +398,13 @@ const sqlitePersistenceMiddleware = storeApi => next => action => {
 
     case "workspaces/deleteCharacter": {
       const { wsId, id } = p;
+      // Clean up portrait and fullbody files before the DB row is removed
+      const dying = storeApi.getState().workspaces[wsId]?.characters[id];
+      if (dying) {
+        const imgs = [dying.portrait, dying.fullbody].filter(Boolean);
+        if (imgs.length) call("deleteManyImages", imgs);
+      }
       call("deleteCharacter", id);
-      // Cascade in SQLite removes char_stories rows, but we must also update
-      // any relationship rows — those are deleted by CASCADE too, so no extra work.
       break;
     }
 
