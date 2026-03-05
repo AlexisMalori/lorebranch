@@ -1,6 +1,9 @@
 // renderer/src/App.jsx
 // handles main React app frontend
 
+// renderer/src/App.jsx
+// handles main React app frontend
+
 // DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -14,6 +17,14 @@ import {
 } from "./store";
 
 import { CSS, T, GLOW_COLORS, DEFAULT_EDGE, getGlowColor } from "./styles/theme";
+
+// ── Hooks ─────────────────────────────────────────────────────────────────────
+import { useToast }               from "./hooks/useToast";
+import { useWorkspaceActions }    from "./hooks/useWorkspaceActions";
+import { useNodeActions }         from "./hooks/useNodeActions";
+import { useCharacterActions }    from "./hooks/useCharacterActions";
+import { useStoryActions }        from "./hooks/useStoryActions";
+import { useRelationshipActions } from "./hooks/useRelationshipActions";
 
 const inputStyle = { background: T.bgInput, border: `1px solid ${T.borderStrong}`, color: T.textBody, borderRadius: 4, outline: "none" };
 
@@ -99,171 +110,40 @@ export default function App() {
   const dispatch = useDispatch();
 
   // ── Selectors ────────────────────────────────────────────────────────────
-  const workspaces  = useSelector(selectAllWorkspaces);
-  const ui          = useSelector(selectUi);
-  const activeWsId  = useSelector(selectActiveWsId);
-  const ws          = useSelector(selectActiveWorkspace);
-  const nodes       = useSelector(selectNodes);
-  const characters  = useSelector(selectCharacters);
-  const stories     = useSelector(selectStories);
-  const relationships = useSelector(selectRelationships);
-  const settings    = useSelector(selectSettings);
+  const workspaces = useSelector(selectAllWorkspaces);
+  const ui         = useSelector(selectUi);
+  const ws         = useSelector(selectActiveWorkspace);
+  const settings   = useSelector(selectSettings);
 
   const { view, selectedNodeId, editingNodeId, activeCharId, sidebarOpen, modal,
-          toast, storyModal, deleteStoryModal,
+          storyModal, deleteStoryModal,
           importPayload, importError, importDragOver,
           exportRoots, exportMode, exportLabel, wsNameDraft } = ui;
 
   const importFileRef = useRef(null);
   const wsImportRef   = useRef(null);
 
-  // ── Toast helper ─────────────────────────────────────────────────────────
-  const showToast = useCallback((msg, kind = "ok") => {
-    dispatch(uiActions.showToast({ msg, kind }));
-    setTimeout(() => dispatch(uiActions.clearToast()), 3200);
-  }, [dispatch]);
-
-  // ── Workspace actions ─────────────────────────────────────────────────────
-  const createWorkspace = (title) => {
-    const ws = mkWorkspace(title);
-    dispatch(workspacesActions.importWorkspace(ws));
-    dispatch(uiActions.activateWorkspace(ws.id));
-  };
-  const updateWs = (id, patch) => dispatch(workspacesActions.updateWorkspace({ id, patch }));
-  const deleteWs = (id) => {
-    const remaining = Object.keys(workspaces).filter(k => k !== id);
-    dispatch(workspacesActions.deleteWorkspace(id));
-    dispatch(uiActions.workspaceDeleted(remaining[0]));
-  };
-
-  // ── Node actions ──────────────────────────────────────────────────────────
-  const setNodes = (patch) => {
-    const resolved = typeof patch === "function" ? patch(nodes) : patch;
-    dispatch(workspacesActions.setNodes({ wsId: activeWsId, nodes: resolved }));
-  };
-  const updateNode = (id, fields) => dispatch(workspacesActions.updateNode({ wsId: activeWsId, id, fields }));
-  const addNode = (parentId = null) => {
-    const id = freshId();
-    const parent = parentId ? nodes[parentId] : null;
-    const node = {
-      id, title: "New Node", body: "Write something here...", type: "Narrative",
-      editedAt: new Date().toISOString(),
-      x: parent ? parent.x + (Math.random() * 220 - 110) : 400,
-      y: parent ? parent.y + 180 : 200,
-      children: [], color: "none", icon: null, images: [],
-    };
-    dispatch(workspacesActions.addNode({ wsId: activeWsId, node, parentId }));
-    return id;
-  };
-  const deleteNode = (id) => {
-    dispatch(workspacesActions.deleteNode({ wsId: activeWsId, id }));
-    if (selectedNodeId === id) dispatch(uiActions.nodeClosed());
-  };
-  const deleteNodes = (ids) => {
-    dispatch(workspacesActions.deleteNodes({ wsId: activeWsId, ids }));
-    if (ids.includes(selectedNodeId)) dispatch(uiActions.nodeClosed());
-  };
-  const toggleConnect = (fromId, toId) => dispatch(workspacesActions.toggleConnect({ wsId: activeWsId, fromId, toId }));
-  const disconnectNodes = (fromId, toId) => dispatch(workspacesActions.disconnectNodes({ wsId: activeWsId, fromId, toId }));
-
-  // ── Character actions ─────────────────────────────────────────────────────
-  const addCharacter = () => {
-    const ch = mkCharacter();
-    dispatch(workspacesActions.addCharacter({ wsId: activeWsId, character: ch }));
-    dispatch(uiActions.openCharSheet(ch.id));
-    return ch.id;
-  };
-  const updateCharacter = (id, fields) => dispatch(workspacesActions.updateCharacter({ wsId: activeWsId, id, fields }));
-  const deleteCharacter = (id) => {
-    dispatch(workspacesActions.deleteCharacter({ wsId: activeWsId, id }));
-    if (activeCharId === id) { dispatch(uiActions.setActiveCharId(null)); dispatch(uiActions.setView("characters")); }
-  };
-
-  // ── Story actions ─────────────────────────────────────────────────────────
-  const saveStory = (storyData) => dispatch(workspacesActions.saveStory({ wsId: activeWsId, story: storyData }));
-  const createStory = (opts = {}) => {
-    const s = mkStory({ ...opts, useTemplate: opts.useTemplate ?? true });
-    dispatch(workspacesActions.createStory({ wsId: activeWsId, story: s }));
-    return s;
-  };
-  const deleteStory = (storyId, scope = "all", fromCharId = null) => {
-    dispatch(workspacesActions.deleteStory({ wsId: activeWsId, storyId, scope, fromCharId }));
-    dispatch(uiActions.setDeleteStoryModal(null));
-  };
-
-  // ── Relationship actions ──────────────────────────────────────────────────
-  const addRelationship = (charAId, charBId) => {
-    const r = mkRelationship(charAId, charBId);
-    dispatch(workspacesActions.addRelationship({ wsId: activeWsId, relationship: r }));
-    return r;
-  };
-  const updateRelationship = (id, fields) => dispatch(workspacesActions.updateRelationship({ wsId: activeWsId, id, fields }));
-  const deleteRelationship = (id) => dispatch(workspacesActions.deleteRelationship({ wsId: activeWsId, id }));
+  // ── Hooks ─────────────────────────────────────────────────────────────────
+  const { toast, showToast }                                  = useToast();
+  const { activeWsId, createWorkspace, updateWs, deleteWs,
+          openExport, doExport, exportWorkspace,
+          handleImportFile, doImport, handleWsImport }        = useWorkspaceActions();
+  const { nodes, setNodes, addNode, updateNode,
+          deleteNode, deleteNodes,
+          toggleConnect, disconnectNodes }                    = useNodeActions();
+  const { characters,
+          addCharacter, updateCharacter, deleteCharacter }    = useCharacterActions();
+  const { stories, saveStory, createStory, deleteStory,
+          storiesForChar, storiesForNode }                    = useStoryActions();
+  const { relationships,
+          addRelationship, updateRelationship,
+          deleteRelationship, relsForChar }                   = useRelationshipActions();
 
   // ── Navigation helpers ────────────────────────────────────────────────────
   const openBubble = (id) => dispatch(uiActions.openBubble(id));
   const goOverview = () => dispatch(uiActions.goOverview());
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const storyList = Object.values(stories);
-  const storiesForChar = (charId) => storyList.filter(s => s.charIds.includes(charId));
-  const storiesForNode = (nodeId) => storyList.filter(s => s.nodeId === nodeId);
-  const relsForChar = (charId) => Object.values(relationships).filter(r => r.charAId === charId || r.charBId === charId);
-
   const activeChar = characters[activeCharId];
-
-  // ── Export/Import ─────────────────────────────────────────────────────────
-  const openExport = () => {
-    const roots = Object.keys(nodes).filter(id => getParents(nodes, id).length === 0);
-    dispatch(uiActions.setExportRoots(roots));
-    dispatch(uiActions.setExportMode("subtree"));
-    dispatch(uiActions.setExportLabel(ws.title || "Exported Tree"));
-    dispatch(uiActions.setModal("export"));
-  };
-  const doExport = () => {
-    const nodeIds = exportMode === "all" ? new Set(Object.keys(nodes)) : collectSubtree(nodes, exportRoots);
-    if (!nodeIds.size) { showToast("Nothing selected.", "err"); return; }
-    const payload = buildExport(nodes, nodeIds, exportLabel || ws.title);
-    const fname = (exportLabel || "tree").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") + ".dtree.json";
-    downloadJSON(payload, fname);
-    dispatch(uiActions.setModal(null));
-    showToast(`Exported ${payload.nodeCount} nodes → ${fname}`);
-  };
-  const handleImportFile = async (file) => {
-    try {
-      const text = await readFileAsText(file);
-      const obj = JSON.parse(text);
-      const err = validateImport(obj);
-      if (err) { dispatch(uiActions.setImportError(err)); dispatch(uiActions.setImportPayload(null)); return; }
-      dispatch(uiActions.setImportPayload(obj)); dispatch(uiActions.setImportError(null));
-    } catch (e) { dispatch(uiActions.setImportError("Parse error: " + e.message)); dispatch(uiActions.setImportPayload(null)); }
-  };
-  const doImport = () => {
-    if (!importPayload) return;
-    const merged = mergeImport(nodes, importPayload);
-    dispatch(workspacesActions.setNodes({ wsId: activeWsId, nodes: merged }));
-    dispatch(uiActions.setModal(null));
-    showToast(`Imported ${importPayload.nodeCount} nodes, ${importPayload.edgeCount} edges.`);
-  };
-  const handleWsImport = async (file) => {
-    try {
-      const text = await readFileAsText(file);
-      const obj = JSON.parse(text);
-      const err = validateImport(obj); if (err) { showToast(err, "err"); return; }
-      const newWs = mkWorkspace(obj.label || "Imported", mergeImport({}, obj, 0, 0));
-      dispatch(workspacesActions.importWorkspace(newWs));
-      dispatch(uiActions.activateWorkspace(newWs.id));
-      showToast(`Workspace "${newWs.title}" imported.`);
-    } catch (e) { showToast("Import failed: " + e.message, "err"); }
-  };
-  const exportWorkspace = (wsId) => {
-    const w = workspaces[wsId]; if (!w) return;
-    const payload = buildExport(w.nodes, new Set(Object.keys(w.nodes)), w.title);
-    const fname = (w.title || "workspace").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") + ".dtree.json";
-    downloadJSON(payload, fname); showToast(`Workspace saved → ${fname}`);
-  };
-
-  if (!ws) return <div style={{ color: T.textPrimary, padding: 40 }}>No workspace found.</div>;
 
   return (
     <div style={{ width: "100%", height: "100vh", background: T.bgApp, fontFamily: T.fontSerif, color: T.textPrimary, overflow: "hidden", display: "flex", position: "relative" }}>
