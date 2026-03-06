@@ -115,7 +115,13 @@ export function useWorkspaceActions() {
   };
   const doImport = () => {
     if (!importPayload) return;
-    dispatch(workspacesActions.setNodes({ wsId: activeWsId, nodes: mergeImport(nodes, importPayload) }));
+    const merged = mergeImport(nodes, importPayload);
+    dispatch(workspacesActions.setNodes({ wsId: activeWsId, nodes: merged }));
+    // setNodes is Redux-only and skipped by the middleware, so explicitly
+    // persist only the newly-imported nodes (not the whole canvas).
+    const existingIds = new Set(Object.keys(nodes));
+    const newNodes = Object.values(merged).filter(n => !existingIds.has(n.id));
+    if (newNodes.length) window.api?.upsertManyNodes({ wsId: activeWsId, nodes: newNodes });
     dispatch(uiActions.setModal(null));
     showToast(`Imported ${importPayload.nodeCount} nodes, ${importPayload.edgeCount} edges.`);
   };

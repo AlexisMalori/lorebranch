@@ -53,6 +53,9 @@ export function useNodeActions() {
     if (ids.includes(selectedNodeId)) dispatch(uiActions.nodeClosed());
   };
 
+  const commitNodePositions = (positions= {id, x, y}) =>
+    dispatch(workspacesActions.commitNodePositions({ wsId: activeWsId, positions }));
+
   const toggleConnect   = (fromId, toId) =>
     dispatch(workspacesActions.toggleConnect({ wsId: activeWsId, fromId, toId }));
 
@@ -64,5 +67,6 @@ export function useNodeActions() {
     setNodes, updateNode, addNode,
     deleteNode, deleteNodes,
     toggleConnect, disconnectNodes,
+    commitNodePositions,
   };
 }

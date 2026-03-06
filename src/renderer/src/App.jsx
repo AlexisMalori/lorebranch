@@ -6,6 +6,30 @@
 
 // DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
 
+// renderer/src/App.jsx
+// handles main React app frontend
+
+// renderer/src/App.jsx
+// handles main React app frontend
+
+// DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
+
+// renderer/src/App.jsx
+// handles main React app frontend
+
+// renderer/src/App.jsx
+// handles main React app frontend
+
+// DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
+
+// renderer/src/App.jsx
+// handles main React app frontend
+
+// renderer/src/App.jsx
+// handles main React app frontend
+
+// DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
+
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import { useDispatch, useSelector } from "react-redux";
@@ -18,7 +42,7 @@ import {
 
 import { CSS, T, GLOW_COLORS, DEFAULT_EDGE, getGlowColor } from "./styles/theme";
 
-// ── Hooks ─────────────────────────────────────────────────────────────────────
+// HOOKS
 import { useToast }               from "./hooks/useToast";
 import { useWorkspaceActions }    from "./hooks/useWorkspaceActions";
 import { useNodeActions }         from "./hooks/useNodeActions";
@@ -130,7 +154,8 @@ export default function App() {
           handleImportFile, doImport, handleWsImport }        = useWorkspaceActions();
   const { nodes, setNodes, addNode, updateNode,
           deleteNode, deleteNodes,
-          toggleConnect, disconnectNodes }                    = useNodeActions();
+          toggleConnect, disconnectNodes,
+          commitNodePositions }                              = useNodeActions();
   const { characters,
           addCharacter, updateCharacter, deleteCharacter }    = useCharacterActions();
   const { stories, saveStory, createStory, deleteStory,
@@ -197,7 +222,7 @@ export default function App() {
         {/* Content router */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
           {view === "overview" && (
-            <OverviewCanvas nodes={nodes} setNodes={setNodes}
+            <OverviewCanvas nodes={nodes} setNodes={setNodes} onCommitPositions={commitNodePositions}
               onOpenBubble={openBubble} onToggleConnect={toggleConnect}
               onDisconnect={disconnectNodes} onDeleteNodes={deleteNodes}
               onUpdateNode={updateNode} showToast={showToast} />
@@ -605,7 +630,7 @@ function StoryCard({ story, characters, nodes, onEdit, onDelete, onOpenChar, onO
 // ═══════════════════════════════════════════════════════════════════════════════
 const NODE_W = 230, NODE_H = 90;
 
-function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, showToast }) {
+function OverviewCanvas({ nodes, setNodes, onCommitPositions, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, showToast }) {
   const canvasRef = useRef(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -650,7 +675,12 @@ function OverviewCanvas({ nodes, setNodes, onOpenBubble, onToggleConnect, onDisc
 
   const onMouseUp = useCallback((e) => {
     if (panning) { setPanning(null); return; }
-    if (dragging) { setDragging(null); return; }
+    if (dragging) {
+      const positions = dragging.ids.map(id => ({ id, x: nodes[id].x, y: nodes[id].y }));
+      onCommitPositions(positions);
+      setDragging(null);
+      return;
+    }
     if (connecting) {
       const { x, y } = toCanvas(e.clientX, e.clientY);
       const target = Object.values(nodes).find(n => x >= n.x && x <= n.x + NODE_W && y >= n.y && y <= n.y + NODE_H && n.id !== connecting.fromId);
