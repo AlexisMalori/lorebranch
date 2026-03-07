@@ -1,35 +1,6 @@
 // renderer/src/App.jsx
 // handles main React app frontend
 
-// renderer/src/App.jsx
-// handles main React app frontend
-
-// DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
-
-// renderer/src/App.jsx
-// handles main React app frontend
-
-// renderer/src/App.jsx
-// handles main React app frontend
-
-// DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
-
-// renderer/src/App.jsx
-// handles main React app frontend
-
-// renderer/src/App.jsx
-// handles main React app frontend
-
-// DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
-
-// renderer/src/App.jsx
-// handles main React app frontend
-
-// renderer/src/App.jsx
-// handles main React app frontend
-
-// DISCLAIMER: A lot of the front-facing code is Claude-assisted at the moment. I want to work away from that over time, but for now it's a big help in automating some of the more tedious bits of UI design.
-
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import { useDispatch, useSelector } from "react-redux";
@@ -42,13 +13,26 @@ import {
 
 import { CSS, T, GLOW_COLORS, DEFAULT_EDGE, getGlowColor } from "./styles/theme";
 
-// HOOKS
+// ── Hooks ─────────────────────────────────────────────────────────────────────
 import { useToast }               from "./hooks/useToast";
 import { useWorkspaceActions }    from "./hooks/useWorkspaceActions";
 import { useNodeActions }         from "./hooks/useNodeActions";
 import { useCharacterActions }    from "./hooks/useCharacterActions";
 import { useStoryActions }        from "./hooks/useStoryActions";
 import { useRelationshipActions } from "./hooks/useRelationshipActions";
+import { useAppImage }            from "./hooks/useAppImage";
+
+// ── Shared components ─────────────────────────────────────────────────────────
+import { AppImage }          from "./components/shared/AppImage";
+import { DeleteStoryModal }  from "./components/modals/DeleteStoryModal";
+import { SettingsModal }     from "./components/modals/SettingsModal";
+import { NewWorkspaceModal } from "./components/modals/NewWorkspaceModal";
+import { ExportModal }       from "./components/modals/ExportModal";
+import { ImportModal }       from "./components/modals/ImportModal";
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+import { formatDate }                from "./utils/fileUtils";
+import { collectSubtree, getParents } from "./utils/treeUtils";
 
 const inputStyle = { background: T.bgInput, border: `1px solid ${T.borderStrong}`, color: T.textBody, borderRadius: 4, outline: "none" };
 
@@ -56,76 +40,6 @@ const DND_STATS = ["strength", "dexterity", "constitution", "intelligence", "wis
 const STAT_LABELS = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" };
 function statMod(v) { return Math.floor((v - 10) / 2); }
 
-// ── IO helpers ────────────────────────────────────────────────────────────────
-function readFileAsText(f) { return new Promise((r, j) => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.onerror = j; rd.readAsText(f); }); }
-function readFileAsDataURL(f) { return new Promise((r, j) => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.onerror = j; rd.readAsDataURL(f); }); }
-// Resolves an app://images/ URL to a data-URL for rendering.
-// Returns null while loading, then the data-URL once resolved.
-function useAppImage(src) {
-  const [dataUrl, setDataUrl] = useState(null);
-  useEffect(() => {
-    if (!src) { setDataUrl(null); return; }
-    if (src.startsWith("data:")) { setDataUrl(src); return; }
-    if (src.startsWith("app://")) {
-      let cancelled = false;
-      window.api.loadImage(src).then(url => { if (!cancelled) setDataUrl(url); });
-      return () => { cancelled = true; };
-    }
-    setDataUrl(src);
-  }, [src]);
-  return dataUrl;
-}
-function AppImage({ src, alt = "", style, ...rest }) {
-  const resolved = useAppImage(src);
-  if (!resolved) return null;
-  return <img src={resolved} alt={alt} style={style} {...rest} />;
-}
-function downloadJSON(obj, name) {
-  const b = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-  const u = URL.createObjectURL(b), a = document.createElement("a");
-  a.href = u; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 1000);
-}
-function formatDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-}
-
-// ── Export/import helpers (pure functions, no store deps) ─────────────────────
-const DTREE_VERSION = "1.0";
-function collectSubtree(nodes, rootIds) {
-  const v = new Set(), q = [...rootIds];
-  while (q.length) { const id = q.shift(); if (v.has(id) || !nodes[id]) continue; v.add(id); nodes[id].children.forEach(c => q.push(c)); }
-  return v;
-}
-function buildExport(nodes, nodeIds, label) {
-  const list = [...nodeIds].map(id => nodes[id]).filter(Boolean);
-  const edges = []; list.forEach(n => n.children.forEach(c => { if (nodeIds.has(c)) edges.push({ from: n.id, to: c }); }));
-  return {
-    dtree: DTREE_VERSION, exportedAt: new Date().toISOString(), label,
-    nodeCount: list.length, edgeCount: edges.length,
-    nodes: list.map(n => ({ id: n.id, title: n.title, body: n.body, type: n.type, editedAt: n.editedAt, x: Math.round(n.x), y: Math.round(n.y), color: n.color || "none", icon: n.icon || null, images: n.images || [] })),
-    edges,
-  };
-}
-function validateImport(obj) {
-  if (!obj || typeof obj !== "object") return "Not a valid JSON object.";
-  if (obj.dtree !== DTREE_VERSION) return `Unknown version "${obj.dtree}". Expected "${DTREE_VERSION}".`;
-  if (!Array.isArray(obj.nodes)) return "Missing 'nodes' array.";
-  if (!Array.isArray(obj.edges)) return "Missing 'edges' array.";
-  for (const n of obj.nodes) if (!n.id || !n.title) return "Node missing required fields.";
-  return null;
-}
-function mergeImport(existing, payload, offX = 100, offY = 100) {
-  const map = {}; payload.nodes.forEach(n => { map[n.id] = freshId(); });
-  const nw = {};
-  payload.nodes.forEach(n => {
-    const nid = map[n.id];
-    nw[nid] = { id: nid, title: n.title, body: n.body || "", type: n.type || "Narrative", editedAt: n.editedAt || new Date().toISOString(), x: (n.x || 0) + offX, y: (n.y || 0) + offY, color: n.color || "none", icon: n.icon || null, images: n.images || [], children: [] };
-  });
-  payload.edges.forEach(e => { const f = map[e.from], t = map[e.to]; if (f && t && nw[f] && !nw[f].children.includes(t)) nw[f].children.push(t); });
-  return { ...existing, ...nw };
-}
-function getParents(nodes, id) { return Object.values(nodes).filter(n => n.children.includes(id)); }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // APP ROOT
@@ -155,7 +69,7 @@ export default function App() {
   const { nodes, setNodes, addNode, updateNode,
           deleteNode, deleteNodes,
           toggleConnect, disconnectNodes,
-          commitNodePositions }                              = useNodeActions();
+          setNodeColor, commitNodePositions }                = useNodeActions();
   const { characters,
           addCharacter, updateCharacter, deleteCharacter }    = useCharacterActions();
   const { stories, saveStory, createStory, deleteStory,
@@ -173,7 +87,7 @@ export default function App() {
   return (
     <div style={{ width: "100%", height: "100vh", background: T.bgApp, fontFamily: T.fontSerif, color: T.textPrimary, overflow: "hidden", display: "flex", position: "relative" }}>
       <style>{CSS}</style>
-
+      
       {/* ── Sidebar ── */}
       <div style={{ width: sidebarOpen ? 230 : 0, flexShrink: 0, overflow: "hidden", transition: "width 0.2s", background: T.bgSidebar, borderRight: `1px solid ${T.borderMid}`, display: "flex", flexDirection: "column", zIndex: 10 }}>
         <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid #222018", flexShrink: 0 }}>
@@ -225,7 +139,7 @@ export default function App() {
             <OverviewCanvas nodes={nodes} setNodes={setNodes} onCommitPositions={commitNodePositions}
               onOpenBubble={openBubble} onToggleConnect={toggleConnect}
               onDisconnect={disconnectNodes} onDeleteNodes={deleteNodes}
-              onUpdateNode={updateNode} showToast={showToast} />
+              onUpdateNode={updateNode} onSetNodeColor={setNodeColor} showToast={showToast} />
           )}
           {view === "bubble" && selectedNodeId && nodes[selectedNodeId] && (
             <BubbleView
@@ -286,176 +200,65 @@ export default function App() {
 
       {/* ── Delete Story Modal ── */}
       {deleteStoryModal && (
-        <div className="modal-backdrop" onClick={() => dispatch(uiActions.setDeleteStoryModal(null))}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ minWidth: 380, maxWidth: 440 }}>
-            <div className="modal-title">Remove Story Event</div>
-            <p style={{ fontFamily: T.fontSerif, fontSize: 15, color: T.textMuted, marginBottom: 20 }}>
-              How would you like to remove <strong style={{ color: T.textPrimary }}>{stories[deleteStoryModal.storyId]?.title || "this story"}</strong>?
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button className="btn btn-ghost" style={{ textAlign: "left", padding: "10px 14px" }} onClick={() => deleteStory(deleteStoryModal.storyId, "this", deleteStoryModal.fromCharId)}>
-                <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.textBody }}>Remove from this character only</div>
-                <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textGhost, marginTop: 2 }}>Other characters and the node link are preserved</div>
-              </button>
-              <button className="btn btn-danger" style={{ textAlign: "left", padding: "10px 14px" }} onClick={() => deleteStory(deleteStoryModal.storyId, "all")}>
-                <div style={{ fontFamily: T.fontMono, fontSize: 11 }}>Delete story everywhere</div>
-                <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.redBorder, marginTop: 2 }}>Removes from all characters and unlinks from any node</div>
-              </button>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => dispatch(uiActions.setDeleteStoryModal(null))}>Cancel</button>
-            </div>
-          </div>
-        </div>
+        <DeleteStoryModal
+          storyTitle={stories[deleteStoryModal.storyId]?.title}
+          onDeleteThis={() => deleteStory(deleteStoryModal.storyId, "this", deleteStoryModal.fromCharId)}
+          onDeleteAll={() => deleteStory(deleteStoryModal.storyId, "all")}
+          onClose={() => dispatch(uiActions.setDeleteStoryModal(null))}
+        />
       )}
 
       {/* ── Settings Modal ── */}
       {modal === "settings" && (
-        <div className="modal-backdrop" onClick={() => dispatch(uiActions.setModal(null))}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ minWidth: 420, maxWidth: 480 }}>
-            <div className="modal-title">Workspace Settings</div>
-            <div className="modal-section">
-              <div className="modal-label">WORKSPACE NAME</div>
-              <input type="text" className="inline-input" defaultValue={ws.title}
-                onBlur={e => { const v = e.target.value.trim(); if (v) updateWs(activeWsId, { title: v }); }}
-                onKeyDown={e => { if (e.key === "Enter") { const v = e.target.value.trim(); if (v) updateWs(activeWsId, { title: v }); } }} />
-            </div>
-            <div className="modal-section">
-              <div className="modal-label">AUTOSAVE</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div className="toggle-wrap" onClick={() => updateWs(activeWsId, { settings: { ...settings, autosave: !settings.autosave } })}>
-                  <div className={`toggle${settings.autosave ? " on" : ""}`}><div className="toggle-knob" /></div>
-                </div>
-                <span style={{ fontFamily: T.fontMono, fontSize: 11, color: settings.autosave ? T.greenBright : T.textFaint }}>
-                  {settings.autosave ? "Enabled — saves on every change" : "Disabled"}
-                </span>
-              </div>
-            </div>
-            <div className="modal-section">
-              <div className="modal-label">DATA</div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => dispatch(uiActions.setModal("import"))}>↑ Import nodes</button>
-                <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => { dispatch(uiActions.setModal(null)); setTimeout(openExport, 50); }}>↓ Export nodes</button>
-                <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => exportWorkspace(activeWsId)}>↓ Save workspace</button>
-              </div>
-            </div>
-            <div className="modal-section">
-              <div className="modal-label" style={{ color: T.redBorder }}>DANGER ZONE</div>
-              {Object.keys(workspaces).length > 1 && (
-                <button className="btn btn-danger" style={{ fontSize: 11 }} onClick={() => {
-                  if (confirm(`Delete workspace "${ws.title}"? This cannot be undone.`)) deleteWs(activeWsId);
-                }}>Delete this workspace</button>
-              )}
-            </div>
-            <div className="modal-footer"><button className="btn btn-gold" onClick={() => dispatch(uiActions.setModal(null))}>Done</button></div>
-          </div>
-        </div>
+        <SettingsModal
+          wsTitle={ws.title} settings={settings}
+          workspaceCount={Object.keys(workspaces).length}
+          onRename={v => updateWs(activeWsId, { title: v })}
+          onToggleAutosave={() => updateWs(activeWsId, { settings: { ...settings, autosave: !settings.autosave } })}
+          onImport={() => dispatch(uiActions.setModal("import"))}
+          onExport={() => { dispatch(uiActions.setModal(null)); setTimeout(openExport, 50); }}
+          onSaveWorkspace={() => exportWorkspace(activeWsId)}
+          onDelete={() => { if (confirm(`Delete workspace "${ws.title}"? This cannot be undone.`)) deleteWs(activeWsId); }}
+          onClose={() => dispatch(uiActions.setModal(null))}
+        />
       )}
 
       {/* ── New Workspace Modal ── */}
       {modal === "newws" && (
-        <div className="modal-backdrop" onClick={() => dispatch(uiActions.setModal(null))}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ minWidth: 360, maxWidth: 420 }}>
-            <div className="modal-title">New Workspace</div>
-            <div className="modal-section">
-              <div className="modal-label">NAME</div>
-              <input type="text" className="inline-input" autoFocus value={wsNameDraft}
-                onChange={e => dispatch(uiActions.setWsNameDraft(e.target.value))}
-                onKeyDown={e => { if (e.key === "Enter" && wsNameDraft.trim()) createWorkspace(wsNameDraft.trim()); }}
-                placeholder="Workspace name…" />
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => dispatch(uiActions.setModal(null))}>Cancel</button>
-              <button className="btn btn-gold" onClick={() => { if (!wsNameDraft.trim()) return; createWorkspace(wsNameDraft.trim()); }}>Create</button>
-            </div>
-          </div>
-        </div>
+        <NewWorkspaceModal
+          nameDraft={wsNameDraft}
+          onChangeName={v => dispatch(uiActions.setWsNameDraft(v))}
+          onCreate={name => { createWorkspace(name); dispatch(uiActions.setModal(null)); }}
+          onClose={() => dispatch(uiActions.setModal(null))}
+        />
       )}
 
       {/* ── Export Modal ── */}
       {modal === "export" && (
-        <div className="modal-backdrop" onClick={() => dispatch(uiActions.setModal(null))}>
-          <div className="modal-box" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">Export Nodes</div>
-            <div className="modal-section">
-              <div className="modal-label">EXPORT LABEL</div>
-              <input type="text" className="inline-input" value={exportLabel} onChange={e => dispatch(uiActions.setExportLabel(e.target.value))} placeholder="Label…" />
-            </div>
-            <div className="modal-section">
-              <div className="modal-label">SCOPE</div>
-              {[{ id: "all", text: "All nodes", sub: `${Object.keys(nodes).length} nodes total` }, { id: "subtree", text: "Selected roots + subtrees", sub: "Choose below" }].map(o => (
-                <div key={o.id} className="radio-row" onClick={() => dispatch(uiActions.setExportMode(o.id))}>
-                  <div className={`radio-dot${exportMode === o.id ? " active" : ""}`} />
-                  <div><div className="radio-label" style={{ color: T.textBody }}>{o.text}</div><div className="radio-label" style={{ fontSize: 9, color: T.textGhost, marginTop: 1 }}>{o.sub}</div></div>
-                </div>
-              ))}
-            </div>
-            {exportMode === "subtree" && (
-              <div className="modal-section">
-                <div className="modal-label" style={{ marginBottom: 6 }}>ROOT NODES</div>
-                <div style={{ maxHeight: 160, overflowY: "auto", border: `1px solid ${T.borderMid}`, borderRadius: 5, padding: "4px 0" }}>
-                  {Object.values(nodes).map(n => {
-                    const isRoot = getParents(nodes, n.id).length === 0;
-                    const checked = exportRoots.includes(n.id);
-                    const sz = collectSubtree(nodes, [n.id]).size;
-                    const gc = getGlowColor(n.color);
-                    return (
-                      <div key={n.id} className="node-picker-row" onClick={() => {
-                        const next = checked ? exportRoots.filter(r => r !== n.id) : [...exportRoots, n.id];
-                        dispatch(uiActions.setExportRoots(next));
-                      }}>
-                        <div className={`node-picker-check${checked ? " checked" : ""}`}>{checked ? "✓" : ""}</div>
-                        {gc.glow && <div style={{ width: 7, height: 7, borderRadius: "50%", background: gc.glow, flexShrink: 0 }} />}
-                        <div style={{ flex: 1, minWidth: 0, fontFamily: T.fontSerif, fontSize: 13, color: T.textBody, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.title}</div>
-                        <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textGhost, flexShrink: 0 }}>{sz}n{isRoot ? <span style={{ color: "#c9a96e88", marginLeft: 4 }}>root</span> : ""}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {exportRoots.length > 0 && <div style={{ fontFamily: T.fontMono, fontSize: 10, color: "#7a9060", marginTop: 6 }}>→ {collectSubtree(nodes, exportRoots).size} nodes will export</div>}
-              </div>
-            )}
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => dispatch(uiActions.setModal(null))}>Cancel</button>
-              <button className="btn btn-green" onClick={doExport}>↓ Download .dtree.json</button>
-            </div>
-          </div>
-        </div>
+        <ExportModal
+          nodes={nodes} exportLabel={exportLabel} exportMode={exportMode} exportRoots={exportRoots}
+          onChangeLabel={v => dispatch(uiActions.setExportLabel(v))}
+          onChangeMode={v => dispatch(uiActions.setExportMode(v))}
+          onToggleRoot={id => dispatch(uiActions.setExportRoots(
+            exportRoots.includes(id) ? exportRoots.filter(r => r !== id) : [...exportRoots, id]
+          ))}
+          onExport={doExport}
+          onClose={() => dispatch(uiActions.setModal(null))}
+        />
       )}
 
       {/* ── Import Modal ── */}
       {modal === "import" && (
-        <div className="modal-backdrop" onClick={() => dispatch(uiActions.setModal(null))}>
-          <div className="modal-box" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">Import Nodes</div>
-            <div className="modal-section">
-              <div className="modal-label">DROP OR SELECT A .DTREE.JSON FILE</div>
-              <div className={`drop-zone${importDragOver ? " drag-over" : ""}`} onClick={() => importFileRef.current.click()}
-                onDragOver={e => { e.preventDefault(); dispatch(uiActions.setImportDragOver(true)); }}
-                onDragLeave={() => dispatch(uiActions.setImportDragOver(false))}
-                onDrop={e => { e.preventDefault(); dispatch(uiActions.setImportDragOver(false)); if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]); }}>
-                <div style={{ fontSize: 26, marginBottom: 6, opacity: 0.35 }}>↑</div>
-                <div style={{ fontFamily: T.fontSerif, fontSize: 14, color: "#7a7060" }}>Drop file or click to browse</div>
-              </div>
-              <input ref={importFileRef} type="file" accept=".json,.dtree.json" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleImportFile(e.target.files[0]); e.target.value = ""; }} />
-            </div>
-            {importError && <div className="import-error">⚠ {importError}</div>}
-            {importPayload && !importError && (
-              <div className="import-preview">
-                <div style={{ fontFamily: T.fontSerif, fontSize: 15, color: T.gold, marginBottom: 8 }}>{importPayload.label || "Untitled"}</div>
-                <div className="import-meta">
-                  <div className="import-meta-item"><span className="import-meta-label">Nodes: </span><span className="import-meta-val">{importPayload.nodeCount}</span></div>
-                  <div className="import-meta-item"><span className="import-meta-label">Edges: </span><span className="import-meta-val">{importPayload.edgeCount}</span></div>
-                </div>
-                <div className="import-node-list">{importPayload.nodes.map(n => <div key={n.id} className="import-node-item">{n.title}<span style={{ color: T.textDeep, fontSize: 11 }}> — {n.type}</span></div>)}</div>
-              </div>
-            )}
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => dispatch(uiActions.setModal(null))}>Cancel</button>
-              <button className="btn btn-green" disabled={!importPayload || !!importError} style={{ opacity: (!importPayload || importError) ? 0.4 : 1 }} onClick={doImport}>↑ Import to Canvas</button>
-            </div>
-          </div>
-        </div>
+        <ImportModal
+          importPayload={importPayload} importError={importError} importDragOver={importDragOver}
+          importFileRef={importFileRef}
+          onFile={handleImportFile}
+          onDragOver={e => { e.preventDefault(); dispatch(uiActions.setImportDragOver(true)); }}
+          onDragLeave={() => dispatch(uiActions.setImportDragOver(false))}
+          onDrop={e => { e.preventDefault(); dispatch(uiActions.setImportDragOver(false)); if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]); }}
+          onImport={doImport}
+          onClose={() => dispatch(uiActions.setModal(null))}
+        />
       )}
 
       {toast && <div className={`toast ${toast.kind}`}>{toast.msg}</div>}
@@ -630,7 +433,7 @@ function StoryCard({ story, characters, nodes, onEdit, onDelete, onOpenChar, onO
 // ═══════════════════════════════════════════════════════════════════════════════
 const NODE_W = 230, NODE_H = 90;
 
-function OverviewCanvas({ nodes, setNodes, onCommitPositions, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, showToast }) {
+function OverviewCanvas({ nodes, setNodes, onCommitPositions, onOpenBubble, onToggleConnect, onDisconnect, onDeleteNodes, onUpdateNode, onSetNodeColor, showToast }) {
   const canvasRef = useRef(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -840,7 +643,7 @@ function OverviewCanvas({ nodes, setNodes, onCommitPositions, onOpenBubble, onTo
                   style={{ width: 14, height: 14, borderRadius: "50%", background: col.glow || T.bgDeep, border: `2px solid ${allMatch ? "#fff" : col.glow ? col.glow + "55" : T.borderStrong}`, cursor: "pointer", flexShrink: 0, transition: "transform 0.12s,border-color 0.12s" }}
                   onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.3)"; }}
                   onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
-                  onClick={() => { setNodes(prev => { const u = { ...prev }; [...selection].forEach(id => { if (u[id]) u[id] = { ...u[id], color: col.id, editedAt: new Date().toISOString() }; }); return u; }); }} />
+                  onClick={() => onSetNodeColor([...selection], col.id)} />
               );
             })}
           </div>

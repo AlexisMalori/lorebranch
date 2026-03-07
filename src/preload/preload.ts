@@ -1,4 +1,4 @@
-// main/preload.ts
+// preload/preload.ts
 // preload script: securely exposes APIs to the renderer process using IPC calls.
 
 import { ipcRenderer } from 'electron'

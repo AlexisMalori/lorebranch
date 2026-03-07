@@ -130,6 +130,7 @@ export const CSS = `
   .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);font-family:${T.fontMono};font-size:11px;padding:8px 18px;border-radius:4px;z-index:200;pointer-events:none;animation:toastIn 0.2s ease;white-space:nowrap;}
   .toast.ok{background:#2a3820;border:1px solid ${T.green};color:${T.greenBright};}
   .toast.err{background:${T.redBg};border:1px solid ${T.redBorder};color:${T.redText};}
+  .toast.saving{background:#252018;border:1px solid ${T.goldBorder};color:${T.gold};}
   @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
   .radio-row{display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;}
   .radio-dot{width:14px;height:14px;border-radius:50%;border:1px solid ${T.textGhost};flex-shrink:0;display:flex;align-items:center;justify-content:center;}
