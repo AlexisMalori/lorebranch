@@ -27,12 +27,9 @@ import { AppImage }          from "./components/shared/AppImage";
 import { DeleteStoryModal }  from "./components/modals/DeleteStoryModal";
 import { SettingsModal }     from "./components/modals/SettingsModal";
 import { NewWorkspaceModal } from "./components/modals/NewWorkspaceModal";
-import { ExportModal }       from "./components/modals/ExportModal";
-import { ImportModal }       from "./components/modals/ImportModal";
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
-import { formatDate }                from "./utils/fileUtils";
-import { collectSubtree, getParents } from "./utils/treeUtils";
+import { formatDate } from "./utils/fileUtils";
 
 const inputStyle = { background: T.bgInput, border: `1px solid ${T.borderStrong}`, color: T.textBody, borderRadius: 4, outline: "none" };
 
@@ -54,18 +51,14 @@ export default function App() {
   const settings   = useSelector(selectSettings);
 
   const { view, selectedNodeId, editingNodeId, activeCharId, sidebarOpen, modal,
-          storyModal, deleteStoryModal,
-          importPayload, importError, importDragOver,
-          exportRoots, exportMode, exportLabel, wsNameDraft } = ui;
+          storyModal, deleteStoryModal, wsNameDraft } = ui;
 
-  const importFileRef = useRef(null);
   const wsImportRef   = useRef(null);
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
   const { toast, showToast }                                  = useToast();
   const { activeWsId, createWorkspace, updateWs, deleteWs,
-          openExport, doExport, exportWorkspace,
-          handleImportFile, doImport, handleWsImport }        = useWorkspaceActions();
+          exportWorkspace, handleWsImport }                   = useWorkspaceActions();
   const { nodes, setNodes, addNode, updateNode,
           deleteNode, deleteNodes,
           toggleConnect, disconnectNodes,
@@ -215,9 +208,7 @@ export default function App() {
           workspaceCount={Object.keys(workspaces).length}
           onRename={v => updateWs(activeWsId, { title: v })}
           onToggleAutosave={() => updateWs(activeWsId, { settings: { ...settings, autosave: !settings.autosave } })}
-          onImport={() => dispatch(uiActions.setModal("import"))}
-          onExport={() => { dispatch(uiActions.setModal(null)); setTimeout(openExport, 50); }}
-          onSaveWorkspace={() => exportWorkspace(activeWsId)}
+          onExportWorkspace={() => exportWorkspace(activeWsId)}
           onDelete={() => { if (confirm(`Delete workspace "${ws.title}"? This cannot be undone.`)) deleteWs(activeWsId); }}
           onClose={() => dispatch(uiActions.setModal(null))}
         />
@@ -229,34 +220,6 @@ export default function App() {
           nameDraft={wsNameDraft}
           onChangeName={v => dispatch(uiActions.setWsNameDraft(v))}
           onCreate={name => { createWorkspace(name); dispatch(uiActions.setModal(null)); }}
-          onClose={() => dispatch(uiActions.setModal(null))}
-        />
-      )}
-
-      {/* ── Export Modal ── */}
-      {modal === "export" && (
-        <ExportModal
-          nodes={nodes} exportLabel={exportLabel} exportMode={exportMode} exportRoots={exportRoots}
-          onChangeLabel={v => dispatch(uiActions.setExportLabel(v))}
-          onChangeMode={v => dispatch(uiActions.setExportMode(v))}
-          onToggleRoot={id => dispatch(uiActions.setExportRoots(
-            exportRoots.includes(id) ? exportRoots.filter(r => r !== id) : [...exportRoots, id]
-          ))}
-          onExport={doExport}
-          onClose={() => dispatch(uiActions.setModal(null))}
-        />
-      )}
-
-      {/* ── Import Modal ── */}
-      {modal === "import" && (
-        <ImportModal
-          importPayload={importPayload} importError={importError} importDragOver={importDragOver}
-          importFileRef={importFileRef}
-          onFile={handleImportFile}
-          onDragOver={e => { e.preventDefault(); dispatch(uiActions.setImportDragOver(true)); }}
-          onDragLeave={() => dispatch(uiActions.setImportDragOver(false))}
-          onDrop={e => { e.preventDefault(); dispatch(uiActions.setImportDragOver(false)); if (e.dataTransfer.files[0]) handleImportFile(e.dataTransfer.files[0]); }}
-          onImport={doImport}
           onClose={() => dispatch(uiActions.setModal(null))}
         />
       )}

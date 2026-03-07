@@ -1,6 +1,6 @@
 import { T } from "../../styles/theme";
 
-export function SettingsModal({ wsTitle, settings, workspaceCount, onRename, onToggleAutosave, onImport, onExport, onSaveWorkspace, onDelete, onClose }) {
+export function SettingsModal({ wsTitle, settings, workspaceCount, onRename, onToggleAutosave, onExportWorkspace, onDelete, onClose }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ minWidth: 420, maxWidth: 480 }}>
@@ -25,9 +25,7 @@ export function SettingsModal({ wsTitle, settings, workspaceCount, onRename, onT
         <div className="modal-section">
           <div className="modal-label">DATA</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={onImport}>↑ Import nodes</button>
-            <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={onExport}>↓ Export nodes</button>
-            <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={onSaveWorkspace}>↓ Save workspace</button>
+            <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={onExportWorkspace}>↓ Export workspace</button>
           </div>
         </div>
         <div className="modal-section">

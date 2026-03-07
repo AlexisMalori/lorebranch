@@ -203,12 +203,6 @@ const uiSlice = createSlice({
     toast: null,
     storyModal: null,
     deleteStoryModal: null,
-    importPayload: null,
-    importError: null,
-    importDragOver: false,
-    exportRoots: [],
-    exportMode: "subtree",
-    exportLabel: "",
     wsNameDraft: "",
   },
   reducers: {
@@ -233,12 +227,6 @@ const uiSlice = createSlice({
     clearToast(state) { state.toast = null; },
     setStoryModal(state, { payload }) { state.storyModal = payload; },
     setDeleteStoryModal(state, { payload }) { state.deleteStoryModal = payload; },
-    setImportPayload(state, { payload }) { state.importPayload = payload; },
-    setImportError(state, { payload }) { state.importError = payload; },
-    setImportDragOver(state, { payload }) { state.importDragOver = payload; },
-    setExportRoots(state, { payload }) { state.exportRoots = payload; },
-    setExportMode(state, { payload }) { state.exportMode = payload; },
-    setExportLabel(state, { payload }) { state.exportLabel = payload; },
     setWsNameDraft(state, { payload }) { state.wsNameDraft = payload; },
     activateWorkspace(state, { payload: id }) {
       state.activeWsId = id; state.view = "overview";
