@@ -8,6 +8,9 @@ import {
   workspaceSchema, nodeSchema, characterSchema, storySchema,
   relationshipSchema, charStorySchema, nodeStorySchema,
 } from './schema'
+import { createLogger } from './services/logging'
+
+const log = createLogger('Database')
 
 let db: Database.Database | null = null
 
@@ -29,11 +32,11 @@ export function initDatabase() {
   ]
   schemas.forEach(s => db!.exec(s))
 
-  console.log('Database initialized at', dbPath)
+  log.debug("Database initialized", dbPath)
 }
 
 export function closeDatabase() {
-  if (db) { db.close(); db = null; console.log('Database closed') }
+  if (db) { db.close(); db = null; log.debug("Database closed") }
 }
 
 function requireDb(): Database.Database {
@@ -67,11 +70,13 @@ export function upsertWorkspace(ws: {
     createdAt: ws.createdAt ?? new Date().toISOString(),
     updatedAt: ws.updatedAt ?? new Date().toISOString(),
   })
+  log.info('Upserted workspace', { id: ws.id, name: ws.name })
 }
 
 export function deleteWorkspace(id: string) {
   // CASCADE removes all child nodes, characters, stories, relationships
   requireDb().prepare('DELETE FROM workspaces WHERE id = ?').run(id)
+  log.info('Deleted workspace', { id })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +115,7 @@ export function upsertNode(wsId: string, node: any) {
     editedAt:    node.editedAt ?? new Date().toISOString(),
     createdAt:   node.createdAt ?? new Date().toISOString(),
   })
+  log.info('Upserted node', { id: node.id, title: node.title })
 }
 
 // Single transaction — used for drag-commit and bulk operations
@@ -150,15 +156,18 @@ export function upsertManyNodes(wsId: string, nodes: any[]) {
       })
     }
   })()
+  log.info('Upserted many nodes', { count: nodes.length })
 }
 
 export function deleteNode(id: string) {
   requireDb().prepare('DELETE FROM nodes WHERE id = ?').run(id)
+  log.info('Deleted node', { id })
 }
 
 export function deleteManyNodes(ids: string[]) {
   const stmt = requireDb().prepare('DELETE FROM nodes WHERE id = ?')
   requireDb().transaction(() => { ids.forEach(id => stmt.run(id)) })()
+  log.info('Deleted many nodes', { count: ids.length })
 }
 
 // When an edge changes, only the parent node's children array needs updating
@@ -166,6 +175,7 @@ export function updateNodeChildren(nodeId: string, children: string[]) {
   requireDb()
     .prepare('UPDATE nodes SET children = ? WHERE id = ?')
     .run(JSON.stringify(children), nodeId)
+  log.info('Updated node children', { nodeId, childCount: children.length })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,10 +220,12 @@ export function upsertCharacter(wsId: string, char: any) {
     createdAt:   char.createdAt ?? new Date().toISOString(),
     updatedAt:   char.updatedAt ?? new Date().toISOString(),
   })
+  log.info('Upserted character', { id: char.id, name: char.name })
 }
 
 export function deleteCharacter(id: string) {
   requireDb().prepare('DELETE FROM characters WHERE id = ?').run(id)
+  log.info('Deleted character', { id })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,6 +250,7 @@ export function upsertStory(wsId: string, story: any) {
     createdAt:   story.createdAt ?? new Date().toISOString(),
     updatedAt:   story.updatedAt ?? new Date().toISOString(),
   })
+  log.info('Upserted story', { id: story.id, title: story.title })
 
   // Sync char_stories: delete then re-insert
   d.prepare('DELETE FROM char_stories WHERE storyId = ?').run(story.id)
@@ -256,6 +269,7 @@ export function upsertStory(wsId: string, story: any) {
 export function deleteStory(id: string) {
   // Junction rows removed by CASCADE
   requireDb().prepare('DELETE FROM stories WHERE id = ?').run(id)
+  log.info('Deleted story', { id })
 }
 
 // Remove one character from a story without deleting the story itself
@@ -263,6 +277,7 @@ export function detachCharFromStory(charId: string, storyId: string) {
   requireDb()
     .prepare('DELETE FROM char_stories WHERE charId = ? AND storyId = ?')
     .run(charId, storyId)
+  log.info('Detached character from story', { charId, storyId })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -289,10 +304,12 @@ export function upsertRelationship(wsId: string, rel: any) {
     description: rel.description ?? null,
     createdAt:   rel.createdAt ?? new Date().toISOString(),
   })
+  log.info('Upserted relationship', { id: rel.id, charAId: rel.charAId, charBId: rel.charBId })
 }
 
 export function deleteRelationship(id: string) {
   requireDb().prepare('DELETE FROM relationships WHERE id = ?').run(id)
+  log.info('Deleted relationship', { id })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -401,6 +418,6 @@ export function loadAllWorkspaces(): Record<string, any> {
       relationships,
     }
   }
-
+  log.info('Loaded all workspaces', { count: Object.keys(result).length })
   return result
 }

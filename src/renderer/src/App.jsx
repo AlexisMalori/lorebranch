@@ -30,6 +30,15 @@ import { NewWorkspaceModal } from "./components/modals/NewWorkspaceModal";
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 import { formatDate } from "./utils/fileUtils";
+import { getParents } from "./utils/treeUtils";
+import { configureRendererLogging } from "./utils/logger";
+
+configureRendererLogging(
+  {
+    enabled: true,
+    level: 'debug'
+  }
+)
 
 const inputStyle = { background: T.bgInput, border: `1px solid ${T.borderStrong}`, color: T.textBody, borderRadius: 4, outline: "none" };
 

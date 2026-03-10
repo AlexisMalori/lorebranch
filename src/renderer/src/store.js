@@ -2,13 +2,15 @@
 // handles Redux store setup, including slices, actions, and SQLite persistence middleware.
 
 import { configureStore, createSlice } from "@reduxjs/toolkit";
+import { createLogger } from './utils/logger'
+const log = createLogger('ReduxStore')
 
 // ── ID factory ────────────────────────────────────────────────────────────────
-let _nc = 200;
-export function freshId() { return String(_nc++); }
+export function freshId() { return crypto.randomUUID(); }
 
 // ── Makers ────────────────────────────────────────────────────────────────────
 export function mkCharacter(name = "New Character") {
+  log.debug("Make new character")
   return {
     id: freshId(), name, occupation: "", age: "", gender: "", race: "", alignment: "",
     bio: "", portrait: null, fullbody: null,

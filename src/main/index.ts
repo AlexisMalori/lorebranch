@@ -1,7 +1,7 @@
 // main/index.ts
 // main process entry point: sets up the Electron app, IPC handlers, and database connection.
 
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -18,18 +18,22 @@ import {
 
 import { saveImage, loadImageAsDataUrl, deleteImage, deleteImages } from './images'
 
+import { configureLogging } from './services/logging'
+
 // so the renderer can load images from it like any normal URL.
 
-function createWindow(): void {
+function createWindow(w = 900, h = 670): void {
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: w,
+    height: h,
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: true,
     },
   })
 
@@ -57,8 +61,16 @@ if (!instLock) {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.electron')
 
+  configureLogging({
+    enabled: true,
+    level: 'debug',
+  })
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+
+  electronApp.setAppUserModelId('com.electron')
 
   initDatabase()
 
@@ -184,9 +196,12 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => { optimizer.watchWindowShortcuts(window) })
   ipcMain.on('ping', () => console.log('pong'))
 
-  createWindow()
+  createWindow(width, height)
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
-app.on('before-quit', () => { closeDatabase() })
+app.on('before-quit', () => { 
+  //perform necessary app cleanup & saving
+  closeDatabase() 
+})

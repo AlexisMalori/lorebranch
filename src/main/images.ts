@@ -4,6 +4,8 @@
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import { createLogger } from './services/logging'
+const log = createLogger('ImageHandler')
 
 function imagesDir(): string {
   const dir = path.join(app.getPath('userData'), 'images')
@@ -28,7 +30,8 @@ export function saveImage(dataUrl: string): string {
   const filename = `${crypto.randomUUID()}${extFromDataUrl(dataUrl)}`
   const filepath = path.join(imagesDir(), filename)
   fs.writeFileSync(filepath, Buffer.from(base64, 'base64'))
-  // Still return app://images/ prefix so existing DB values are consistent
+  // Still return app://images/ pr{efix so existing DB values are consistent
+  log.info("Saved image to file", {filepath, filename})
   return `app://images/${filename}`
 }
 
