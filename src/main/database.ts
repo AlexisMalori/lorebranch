@@ -1,14 +1,14 @@
 // main/database.ts
-// stores logic for all database interactions & CRUD operations
+// All database interactions & CRUD operations.
+// Paths are resolved via configService — do NOT import `app` here.
 
 import Database from 'better-sqlite3'
-import path from 'path'
-import { app } from 'electron'
 import {
   workspaceSchema, nodeSchema, characterSchema, storySchema,
   relationshipSchema, charStorySchema, nodeStorySchema,
 } from './schema'
-import { createLogger } from './services/logging'
+import { createLogger }   from './services/logging'
+import { configService }  from './services/configService'
 
 const log = createLogger('Database')
 
@@ -17,11 +17,10 @@ let db: Database.Database | null = null
 // ── Init / teardown ───────────────────────────────────────────────────────────
 
 export function initDatabase() {
-  const dbPath = path.join(app.getPath('userData'), 'app.db')
+  const dbPath = configService.paths.database
   db = new Database(dbPath)
   if (!db) throw new Error('Failed to initialize database')
 
-  // WAL must come first for best concurrency
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = NORMAL')
   db.pragma('foreign_keys = ON')
@@ -32,12 +31,14 @@ export function initDatabase() {
   ]
   schemas.forEach(s => db!.exec(s))
 
-  log.debug("Database initialized", dbPath)
+  log.debug('Database initialized', dbPath)
 }
 
 export function closeDatabase() {
-  if (db) { db.close(); db = null; log.debug("Database closed") }
+  if (db) { db.close(); db = null; log.debug('Database closed') }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function requireDb(): Database.Database {
   if (!db) throw new Error('Database not initialized')
@@ -74,7 +75,6 @@ export function upsertWorkspace(ws: {
 }
 
 export function deleteWorkspace(id: string) {
-  // CASCADE removes all child nodes, characters, stories, relationships
   requireDb().prepare('DELETE FROM workspaces WHERE id = ?').run(id)
   log.info('Deleted workspace', { id })
 }
@@ -83,24 +83,9 @@ export function deleteWorkspace(id: string) {
 // NODES
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function upsertNode(wsId: string, node: any) {
-  requireDb().prepare(`
-    INSERT INTO nodes
-      (id, workspaceId, title, body, type, color, icon, images, children, x, y, editedAt, createdAt)
-    VALUES
-      (@id, @workspaceId, @title, @body, @type, @color, @icon, @images, @children, @x, @y, @editedAt, @createdAt)
-    ON CONFLICT(id) DO UPDATE SET
-      title    = excluded.title,
-      body     = excluded.body,
-      type     = excluded.type,
-      color    = excluded.color,
-      icon     = excluded.icon,
-      images   = excluded.images,
-      children = excluded.children,
-      x        = excluded.x,
-      y        = excluded.y,
-      editedAt = excluded.editedAt
-  `).run({
+// Shared row mapper — keeps upsertNode and upsertManyNodes in sync
+function mapNodeRow(wsId: string, node: any) {
+  return {
     id:          node.id,
     workspaceId: wsId,
     title:       node.title,
@@ -114,47 +99,36 @@ export function upsertNode(wsId: string, node: any) {
     y:           node.y ?? 0,
     editedAt:    node.editedAt ?? new Date().toISOString(),
     createdAt:   node.createdAt ?? new Date().toISOString(),
-  })
+  }
+}
+
+const NODE_UPSERT_SQL = `
+  INSERT INTO nodes
+    (id, workspaceId, title, body, type, color, icon, images, children, x, y, editedAt, createdAt)
+  VALUES
+    (@id, @workspaceId, @title, @body, @type, @color, @icon, @images, @children, @x, @y, @editedAt, @createdAt)
+  ON CONFLICT(id) DO UPDATE SET
+    title    = excluded.title,
+    body     = excluded.body,
+    type     = excluded.type,
+    color    = excluded.color,
+    icon     = excluded.icon,
+    images   = excluded.images,
+    children = excluded.children,
+    x        = excluded.x,
+    y        = excluded.y,
+    editedAt = excluded.editedAt
+`
+
+export function upsertNode(wsId: string, node: any) {
+  requireDb().prepare(NODE_UPSERT_SQL).run(mapNodeRow(wsId, node))
   log.info('Upserted node', { id: node.id, title: node.title })
 }
 
-// Single transaction — used for drag-commit and bulk operations
 export function upsertManyNodes(wsId: string, nodes: any[]) {
-  const stmt = requireDb().prepare(`
-    INSERT INTO nodes
-      (id, workspaceId, title, body, type, color, icon, images, children, x, y, editedAt, createdAt)
-    VALUES
-      (@id, @workspaceId, @title, @body, @type, @color, @icon, @images, @children, @x, @y, @editedAt, @createdAt)
-    ON CONFLICT(id) DO UPDATE SET
-      title    = excluded.title,
-      body     = excluded.body,
-      type     = excluded.type,
-      color    = excluded.color,
-      icon     = excluded.icon,
-      images   = excluded.images,
-      children = excluded.children,
-      x        = excluded.x,
-      y        = excluded.y,
-      editedAt = excluded.editedAt
-  `)
+  const stmt = requireDb().prepare(NODE_UPSERT_SQL)
   requireDb().transaction(() => {
-    for (const node of nodes) {
-      stmt.run({
-        id:          node.id,
-        workspaceId: wsId,
-        title:       node.title,
-        body:        node.body ?? '',
-        type:        node.type ?? 'Narrative',
-        color:       node.color ?? 'none',
-        icon:        node.icon ?? null,
-        images:      JSON.stringify(node.images ?? []),
-        children:    JSON.stringify(node.children ?? []),
-        x:           node.x ?? 0,
-        y:           node.y ?? 0,
-        editedAt:    node.editedAt ?? new Date().toISOString(),
-        createdAt:   node.createdAt ?? new Date().toISOString(),
-      })
-    }
+    for (const node of nodes) stmt.run(mapNodeRow(wsId, node))
   })()
   log.info('Upserted many nodes', { count: nodes.length })
 }
@@ -170,7 +144,6 @@ export function deleteManyNodes(ids: string[]) {
   log.info('Deleted many nodes', { count: ids.length })
 }
 
-// When an edge changes, only the parent node's children array needs updating
 export function updateNodeChildren(nodeId: string, children: string[]) {
   requireDb()
     .prepare('UPDATE nodes SET children = ? WHERE id = ?')
@@ -252,14 +225,12 @@ export function upsertStory(wsId: string, story: any) {
   })
   log.info('Upserted story', { id: story.id, title: story.title })
 
-  // Sync char_stories: delete then re-insert
   d.prepare('DELETE FROM char_stories WHERE storyId = ?').run(story.id)
   if (story.charIds?.length) {
     const ins = d.prepare('INSERT OR IGNORE INTO char_stories (charId, storyId) VALUES (?, ?)')
     d.transaction(() => { story.charIds.forEach((cid: string) => ins.run(cid, story.id)) })()
   }
 
-  // Sync node_stories: at most one node per story
   d.prepare('DELETE FROM node_stories WHERE storyId = ?').run(story.id)
   if (story.nodeId) {
     d.prepare('INSERT OR IGNORE INTO node_stories (nodeId, storyId) VALUES (?, ?)').run(story.nodeId, story.id)
@@ -267,12 +238,10 @@ export function upsertStory(wsId: string, story: any) {
 }
 
 export function deleteStory(id: string) {
-  // Junction rows removed by CASCADE
   requireDb().prepare('DELETE FROM stories WHERE id = ?').run(id)
   log.info('Deleted story', { id })
 }
 
-// Remove one character from a story without deleting the story itself
 export function detachCharFromStory(charId: string, storyId: string) {
   requireDb()
     .prepare('DELETE FROM char_stories WHERE charId = ? AND storyId = ?')
@@ -367,10 +336,9 @@ export function loadAllWorkspaces(): Record<string, any> {
       }
     }
 
-    // Stories + junction data
-    const storyRows  = d.prepare('SELECT * FROM stories WHERE workspaceId = ?').all(wsId) as any[]
-    const charLinks  = d.prepare('SELECT charId, storyId FROM char_stories WHERE storyId IN (SELECT id FROM stories WHERE workspaceId = ?)').all(wsId) as any[]
-    const nodeLinks  = d.prepare('SELECT nodeId, storyId FROM node_stories WHERE storyId IN (SELECT id FROM stories WHERE workspaceId = ?)').all(wsId) as any[]
+    const storyRows = d.prepare('SELECT * FROM stories WHERE workspaceId = ?').all(wsId) as any[]
+    const charLinks = d.prepare('SELECT charId, storyId FROM char_stories WHERE storyId IN (SELECT id FROM stories WHERE workspaceId = ?)').all(wsId) as any[]
+    const nodeLinks = d.prepare('SELECT nodeId, storyId FROM node_stories WHERE storyId IN (SELECT id FROM stories WHERE workspaceId = ?)').all(wsId) as any[]
 
     const charMap: Record<string, string[]> = {}
     charLinks.forEach(({ charId, storyId }) => {
@@ -418,6 +386,7 @@ export function loadAllWorkspaces(): Record<string, any> {
       relationships,
     }
   }
+
   log.info('Loaded all workspaces', { count: Object.keys(result).length })
   return result
 }

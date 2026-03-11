@@ -17,6 +17,11 @@ const config: LoggerConfig = {
     output_size: 3000,
 }
 
+/** 
+* Configures the logger service across the entire application
+* @param {LoggerConfig} newConfig - A dictionary of configuration value overrides.
+*/
+
 export function configureLogging(newConfig: Partial<LoggerConfig>) {
     Object.assign(config, newConfig)
 }
@@ -38,6 +43,14 @@ const colors: Record<LogLevel, string> = {
 }
 const reset = '\x1b[0m' // reset color
 
+/** 
+* Creates a log instance, generally does not need to be directly called.
+* @param {LogLevel} level - The type/importance of the log
+* @param {string} action - The action being performed or failing
+* @param {unknown} details - Optional information about the logged event
+* @param {string} context - What process triggered the event log
+*/
+
 export function log(level: LogLevel, action: string, details?: unknown, context?: string) {
     if ((!config.enabled) || (levelPriority[level] < levelPriority[config.level])) return
 
@@ -58,7 +71,7 @@ export function log(level: LogLevel, action: string, details?: unknown, context?
     console.log(message + detailsStr + reset)
 }
 
-export const logging = {
+const logging = {
     debug(action: string, details?: unknown, context?: string) {
         log('debug', action, details, context)
     },
@@ -75,6 +88,11 @@ export const logging = {
         log('critical', action, details, context)
     },
 }
+
+/** 
+* Creates a logger instance scoped to the current module
+* @param {string} context - The name/alias of the module
+*/
 
 export function createLogger(context: string) {
     const scoped: Partial<typeof logging> = {}

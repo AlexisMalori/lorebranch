@@ -1,5 +1,5 @@
 // main/index.ts
-// main process entry point: sets up the Electron app, IPC handlers, and database connection.
+// Main process entry point: sets up the Electron app, IPC handlers, and database connection.
 
 import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
@@ -17,10 +17,9 @@ import {
 } from './database'
 
 import { saveImage, loadImageAsDataUrl, deleteImage, deleteImages } from './images'
+import { configService } from './services/configService'
 
-import { configureLogging } from './services/logging'
-
-// so the renderer can load images from it like any normal URL.
+// ── Window ─────────────────────────────────────────────────────────────────────
 
 function createWindow(w = 900, h = 670): void {
   const mainWindow = new BrowserWindow({
@@ -50,6 +49,8 @@ function createWindow(w = 900, h = 670): void {
   }
 }
 
+// ── Single-instance lock ───────────────────────────────────────────────────────
+
 const instLock = app.requestSingleInstanceLock()
 if (!instLock) {
   app.quit()
@@ -60,34 +61,31 @@ if (!instLock) {
   })
 }
 
+// ── Validation helpers ─────────────────────────────────────────────────────────
+// Kept here because they are IPC-layer concerns, not database concerns.
+
+function assertString(v: any, label = 'value') {
+  if (typeof v !== 'string' || v.length === 0)
+    throw new Error(`Invalid ${label}: expected non-empty string`)
+}
+function assertObject(v: any, label = 'value') {
+  if (typeof v !== 'object' || v === null)
+    throw new Error(`Invalid ${label}: expected object`)
+}
+
+// ── App lifecycle ──────────────────────────────────────────────────────────────
+
 app.whenReady().then(() => {
+  // configService.init() bootstraps paths AND logging — must run first
+  configService.init()
 
-  configureLogging({
-    enabled: true,
-    level: 'debug',
-  })
-
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
 
   electronApp.setAppUserModelId('com.electron')
-
   initDatabase()
 
-  // ── Validation helpers ─────────────────────────────────────────────────────
-  function assertString(v: any, label = 'value') {
-    if (typeof v !== 'string' || v.length === 0)
-      throw new Error(`Invalid ${label}: expected non-empty string`)
-  }
-  function assertObject(v: any, label = 'value') {
-    if (typeof v !== 'object' || v === null)
-      throw new Error(`Invalid ${label}: expected object`)
-  }
+  // ── Image handlers ───────────────────────────────────────────────────────────
 
-  // ── Image handlers ─────────────────────────────────────────────────────────
-
-  // Renderer sends a data-URL; main writes the file and returns an app:// URL.
-  // The app:// URL is what gets stored in Redux and SQLite — never the data-URL.
   ipcMain.handle('img:save', (_, dataUrl: string) => {
     assertString(dataUrl, 'dataUrl')
     if (!dataUrl.startsWith('data:image/'))
@@ -95,27 +93,25 @@ app.whenReady().then(() => {
     return saveImage(dataUrl)
   })
 
-  // Load an image by app:// URL, return it as a data-URL for the renderer.
   ipcMain.handle('img:load', (_, appUrl: string) => {
     if (typeof appUrl !== 'string') return null
     return loadImageAsDataUrl(appUrl)
   })
 
-  // Delete one image file by app:// URL. Called when user explicitly removes an image.
   ipcMain.handle('img:delete', (_, appUrl: string) => {
     if (typeof appUrl === 'string') deleteImage(appUrl)
   })
 
-  // Delete multiple image files in one round-trip.
-  // Called before deleting a node or character that may own several images.
   ipcMain.handle('img:delete-many', (_, appUrls: string[]) => {
     if (Array.isArray(appUrls)) deleteImages(appUrls)
   })
 
-  // ── Bootstrap ──────────────────────────────────────────────────────────────
+  // ── Bootstrap ────────────────────────────────────────────────────────────────
+
   ipcMain.handle('db:load-all', () => loadAllWorkspaces())
 
-  // ── Workspaces ─────────────────────────────────────────────────────────────
+  // ── Workspaces ───────────────────────────────────────────────────────────────
+
   ipcMain.handle('db:upsert-workspace', (_, ws) => {
     assertObject(ws, 'workspace'); assertString(ws.id, 'workspace.id'); assertString(ws.name, 'workspace.name')
     return upsertWorkspace(ws)
@@ -126,7 +122,8 @@ app.whenReady().then(() => {
     return deleteWorkspace(id)
   })
 
-  // ── Nodes ──────────────────────────────────────────────────────────────────
+  // ── Nodes ────────────────────────────────────────────────────────────────────
+
   ipcMain.handle('db:upsert-node', (_, { wsId, node }) => {
     assertString(wsId, 'wsId'); assertObject(node, 'node')
     return upsertNode(wsId, node)
@@ -154,7 +151,8 @@ app.whenReady().then(() => {
     return updateNodeChildren(nodeId, children)
   })
 
-  // ── Characters ─────────────────────────────────────────────────────────────
+  // ── Characters ───────────────────────────────────────────────────────────────
+
   ipcMain.handle('db:upsert-character', (_, { wsId, character }) => {
     assertString(wsId, 'wsId'); assertObject(character, 'character')
     return upsertCharacter(wsId, character)
@@ -165,7 +163,8 @@ app.whenReady().then(() => {
     return deleteCharacter(id)
   })
 
-  // ── Stories ────────────────────────────────────────────────────────────────
+  // ── Stories ──────────────────────────────────────────────────────────────────
+
   ipcMain.handle('db:upsert-story', (_, { wsId, story }) => {
     assertString(wsId, 'wsId'); assertObject(story, 'story')
     return upsertStory(wsId, story)
@@ -181,7 +180,8 @@ app.whenReady().then(() => {
     return detachCharFromStory(charId, storyId)
   })
 
-  // ── Relationships ──────────────────────────────────────────────────────────
+  // ── Relationships ─────────────────────────────────────────────────────────────
+
   ipcMain.handle('db:upsert-relationship', (_, { wsId, relationship }) => {
     assertString(wsId, 'wsId'); assertObject(relationship, 'relationship')
     return upsertRelationship(wsId, relationship)
@@ -192,7 +192,8 @@ app.whenReady().then(() => {
     return deleteRelationship(id)
   })
 
-  // ── Misc ───────────────────────────────────────────────────────────────────
+  // ── Misc ──────────────────────────────────────────────────────────────────────
+
   app.on('browser-window-created', (_, window) => { optimizer.watchWindowShortcuts(window) })
   ipcMain.on('ping', () => console.log('pong'))
 
@@ -201,7 +202,4 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
-app.on('before-quit', () => { 
-  //perform necessary app cleanup & saving
-  closeDatabase() 
-})
+app.on('before-quit', () => { closeDatabase() })
